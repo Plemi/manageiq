@@ -2,19 +2,25 @@ require "rugged"
 
 class GitRepository < ApplicationRecord
   include AuthenticationMixin
+  belongs_to :authentication
 
   GIT_REPO_DIRECTORY = Rails.root.join('data/git_repos')
 
-  validates :url, :format => URI::regexp(%w(http https file)), :allow_nil => false
+  validates :url, :format => Regexp.union(URI.regexp(%w[http https file ssh]), /\A[-\w:.]+@.*:/), :allow_nil => false
 
   default_value_for :verify_ssl, OpenSSL::SSL::VERIFY_PEER
   validates :verify_ssl, :inclusion => {:in => [OpenSSL::SSL::VERIFY_NONE, OpenSSL::SSL::VERIFY_PEER]}
 
   has_many :git_branches, :dependent => :destroy
   has_many :git_tags, :dependent => :destroy
-  after_destroy :delete_repo_dir # TODO: Need to distribute this to all systems
+  after_destroy :broadcast_repo_dir_delete
 
   INFO_KEYS = %w(commit_sha commit_message commit_time name).freeze
+
+  def self.delete_repo_dir(id, directory_name)
+    _log.info("Deleting GitRepository[#{id}] in #{directory_name} for MiqServer[#{MiqServer.my_server.id}]...")
+    FileUtils.rm_rf(directory_name)
+  end
 
   def refresh
     update_repo
@@ -80,7 +86,7 @@ class GitRepository < ApplicationRecord
     with_worktree do |worktree|
       message = "Updating #{url} in #{directory_name}..."
       _log.info(message)
-      worktree.send(:fetch_and_merge)
+      worktree.send(:pull)
       _log.info("#{message}...Complete")
     end
     @updated_repo = true
@@ -158,14 +164,43 @@ class GitRepository < ApplicationRecord
   def worktree_params
     params = {:path => directory_name}
     params[:certificate_check] = method(:self_signed_cert_cb) if verify_ssl == OpenSSL::SSL::VERIFY_NONE
-    if authentications.any?
-      params[:username] = default_authentication.userid
-      params[:password] = default_authentication.password
+    if (auth = authentication || default_authentication)
+      params[:username] = auth.userid
+      if auth.auth_key
+        params[:ssh_private_key] = auth.auth_key
+        params[:password] = auth.auth_key_password.presence
+      else
+        params[:password] = auth.password
+      end
     end
+    params[:proxy_url] = proxy_url if proxy_url?
     params
   end
 
-  def delete_repo_dir
-    FileUtils.rm_rf(directory_name)
+  def proxy_url?
+    return false unless !!Settings.git_repository_proxy.host
+    return false unless %w[http https].include?(Settings.git_repository_proxy.scheme)
+
+    repo_url_scheme = begin
+                        URI.parse(url).scheme
+                      rescue URI::InvalidURIError
+                        # url is not a parsable URI, such as git@github.com:ManageIQ/manageiq.git
+                        nil
+                      end
+    %w[http https].include?(repo_url_scheme)
+  end
+
+  def proxy_url
+    uri_opts = Settings.git_repository_proxy.to_h.slice(:host, :port, :scheme, :path)
+    uri_opts[:path] ||= "/"
+    URI::Generic.build(uri_opts).to_s
+  end
+
+  def broadcast_repo_dir_delete
+    MiqQueue.broadcast(
+      :class_name  => self.class.name,
+      :method_name => "delete_repo_dir",
+      :args        => [id, directory_name]
+    )
   end
 end

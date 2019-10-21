@@ -71,13 +71,14 @@ gem "rest-client",                    "~>2.0.0",       :require => false
 gem "ripper_ruby_parser",             "~>1.5.1",       :require => false
 gem "ruby-progressbar",               "~>1.7.0",       :require => false
 gem "rubyzip",                        "~>1.2.2",       :require => false
-gem "rugged",                         "~>0.27.0",      :require => false
 gem "snmp",                           "~>1.2.0",       :require => false
+gem "sprockets",                      "~>3.0",         :require => false
 gem "sqlite3",                        "~>1.3.0",       :require => false
 gem "sys-filesystem",                 "~>1.2.0"
 gem "terminal",                                        :require => false
 
 # Modified gems (forked on Github)
+gem "rugged",                         "=0.28.2", :require => false,   :git => "https://github.com/ManageIQ/rugged.git", :tag => "v0.28.2-1", :submodules => true
 gem "ruport",                         "=1.7.0",                       :git => "https://github.com/ManageIQ/ruport.git", :tag => "v1.7.0-3"
 
 # In 1.9.3: Time.parse uses british version dd/mm/yyyy instead of american version mm/dd/yyyy
@@ -155,7 +156,7 @@ end
 
 group :ovirt, :manageiq_default do
   manageiq_plugin "manageiq-providers-ovirt"
-  gem "ovirt_metrics",                  "~>3.0.0",       :require => false
+  gem "ovirt_metrics",                  "~>3.0.1",       :require => false
 end
 
 group :scvmm, :manageiq_default do
@@ -191,16 +192,17 @@ group :graphql_api, :manageiq_default do
 end
 
 group :scheduler, :manageiq_default do
-  # Modified gems (forked on Github)
-  gem "rufus-scheduler", "=3.1.10.2", :git => "https://github.com/ManageIQ/rufus-scheduler.git", :require => false, :tag => "v3.1.10-2"
+  gem "rufus-scheduler"
 end
+# rufus has et-orbi dependency, v1.2.2 has patch for ConvertTimeToEoTime that we need
+gem "et-orbi",                          ">= 1.2.2"
 
 group :seed, :manageiq_default do
   manageiq_plugin "manageiq-content"
 end
 
 group :smartstate, :manageiq_default do
-  gem "manageiq-smartstate",            "~>0.2.19",       :require => false
+  gem "manageiq-smartstate",            "~>0.3.1",       :require => false
 end
 
 group :consumption, :manageiq_default do
@@ -237,6 +239,7 @@ end
 unless ENV["APPLIANCE"]
   group :development do
     gem "foreman"
+    gem "PoParser"
     gem "rubocop-performance", "~>1.3",    :require => false
     # ruby_parser is required for i18n string extraction
     gem "ruby_parser",                     :require => false

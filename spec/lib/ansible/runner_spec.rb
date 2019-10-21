@@ -5,6 +5,11 @@ describe Ansible::Runner do
   let(:tags)       { "tag" }
   let(:result)     { AwesomeSpawn::CommandResult.new("ansible-runner", "output", "", "0") }
 
+  after do
+    Ansible::Runner.instance_variable_set(:@python2_modules_path, nil)
+    Ansible::Runner.instance_variable_set(:@python3_modules_path, nil)
+  end
+
   describe ".run" do
     let(:playbook) { "/path/to/my/playbook" }
     before do
@@ -21,7 +26,7 @@ describe Ansible::Runner do
 
         expect(method).to eq("run")
         expect(json).to   eq(:json)
-        expect(args).to   eq(:ident => "result", :playbook => playbook)
+        expect(args).to   eq(:ident => "result", :playbook => "playbook", :project_dir => "/path/to/my")
 
         hosts = File.read(File.join(dir, "inventory", "hosts"))
         expect(hosts).to eq("localhost")
@@ -31,6 +36,8 @@ describe Ansible::Runner do
 
         expect(File.exist?(File.join(dir, "env", "cmdline"))).to be_falsey
       end.and_return(result)
+
+      expect_galaxy_roles_fetched
 
       described_class.run(env_vars, extra_vars, playbook)
     end
@@ -44,7 +51,7 @@ describe Ansible::Runner do
 
         expect(method).to eq("run")
         expect(json).to   eq(:json)
-        expect(args).to   eq(:ident => "result", :playbook => playbook)
+        expect(args).to   eq(:ident => "result", :playbook => "playbook", :project_dir => "/path/to/my")
 
         hosts = File.read(File.join(dir, "inventory", "hosts"))
         expect(hosts).to eq("localhost")
@@ -56,6 +63,8 @@ describe Ansible::Runner do
         expect(cmdline).to eq("--tags #{tags}")
       end.and_return(result)
 
+      expect_galaxy_roles_fetched
+
       described_class.run(env_vars, extra_vars, playbook, :tags => tags)
     end
 
@@ -64,7 +73,7 @@ describe Ansible::Runner do
         expect(command).to eq("ansible-runner")
 
         _method, _dir, _json, args = options[:params]
-        expect(args).to eq(:ident => "result", :playbook => playbook, "-vvvvv" => nil)
+        expect(args).to eq(:ident => "result", :playbook => "playbook", :project_dir => "/path/to/my", "-vvvvv" => nil)
       end.and_return(result)
 
       described_class.run(env_vars, extra_vars, playbook, :verbosity => 6)
@@ -83,6 +92,57 @@ describe Ansible::Runner do
       described_class.run(env_vars, extra_vars, playbook, :become_enabled => true)
     end
 
+    it "sets PYTHONPATH correctly with python3 modules installed " do
+      python2_modules_path = "/var/lib/manageiq/venv/lib/python2.7/site-packages"
+      py3_awx_modules_path = "/var/lib/awx/venv/ansible/lib/python3.6/site-packages"
+
+      allow(File).to receive(:exist?).with(python2_modules_path).and_return(false)
+      allow(File).to receive(:exist?).with(py3_awx_modules_path).and_return(true)
+
+      expect(AwesomeSpawn).to receive(:run) do |command, options|
+        expect(command).to eq("ansible-runner")
+
+        expect(options[:env]["PYTHONPATH"]).to eq(py3_awx_modules_path)
+      end.and_return(result)
+
+      described_class.run(env_vars, extra_vars, playbook, :become_enabled => true)
+    end
+
+    it "sets PYTHONPATH correctly with python2 modules installed " do
+      python2_modules_path = "/var/lib/manageiq/venv/lib/python2.7/site-packages"
+      py3_awx_modules_path = "/var/lib/awx/venv/ansible/lib/python3.6/site-packages"
+
+      allow(File).to receive(:exist?).with(python2_modules_path).and_return(true)
+      allow(File).to receive(:exist?).with(py3_awx_modules_path).and_return(false)
+
+      expect(AwesomeSpawn).to receive(:run) do |command, options|
+        expect(command).to eq("ansible-runner")
+
+        expect(options[:env]["PYTHONPATH"]).to eq(python2_modules_path)
+      end.and_return(result)
+
+      described_class.run(env_vars, extra_vars, playbook, :become_enabled => true)
+    end
+
+    it "assigns multiple path values if they exist" do
+      python2_modules_path = "/var/lib/manageiq/venv/lib/python2.7/site-packages"
+      python3_modules_path = "/usr/lib64/python3.6/site-packages"
+      py3_awx_modules_path = "/var/lib/awx/venv/ansible/lib/python3.6/site-packages"
+
+      allow(File).to receive(:exist?).with(python2_modules_path).and_return(false)
+      allow(File).to receive(:exist?).with(python3_modules_path).and_return(true)
+      allow(File).to receive(:exist?).with(py3_awx_modules_path).and_return(true)
+
+      expect(AwesomeSpawn).to receive(:run) do |command, options|
+        expect(command).to eq("ansible-runner")
+
+        expected_path = [python3_modules_path, py3_awx_modules_path].join(File::PATH_SEPARATOR)
+        expect(options[:env]["PYTHONPATH"]).to eq(expected_path)
+      end.and_return(result)
+
+      described_class.run(env_vars, extra_vars, playbook, :become_enabled => true)
+    end
+
     context "with special characters" do
       let(:env_vars)   { {"ENV1" => "pa$%w0rd!'"} }
       let(:extra_vars) { {"name" => "john's server"} }
@@ -96,7 +156,7 @@ describe Ansible::Runner do
 
           expect(method).to eq("run")
           expect(json).to   eq(:json)
-          expect(args).to   eq(:ident => "result", :playbook => playbook)
+          expect(args).to   eq(:ident => "result", :playbook => "playbook", :project_dir => "/path/to/my")
 
           hosts = File.read(File.join(dir, "inventory", "hosts"))
           expect(hosts).to eq("localhost")
@@ -104,6 +164,8 @@ describe Ansible::Runner do
           extravars = JSON.parse(File.read(File.join(dir, "env", "extravars")))
           expect(extravars).to eq("name" => "john's server", "ansible_connection" => "local")
         end.and_return(result)
+
+        expect_galaxy_roles_fetched
 
         described_class.run(env_vars, extra_vars, playbook)
       end
@@ -126,7 +188,7 @@ describe Ansible::Runner do
 
         expect(method).to eq("start")
         expect(json).to   eq(:json)
-        expect(args).to   eq(:ident => "result", :playbook => playbook)
+        expect(args).to   eq(:ident => "result", :playbook => "playbook", :project_dir => "/path/to/my")
 
         hosts = File.read(File.join(dir, "inventory", "hosts"))
         expect(hosts).to eq("localhost")
@@ -136,6 +198,8 @@ describe Ansible::Runner do
 
         expect(File.exist?(File.join(dir, "env", "cmdline"))).to be_falsey
       end.and_return(result)
+
+      expect_galaxy_roles_fetched
 
       runner_result = described_class.run_async(env_vars, extra_vars, playbook)
       expect(runner_result).kind_of?(Ansible::Runner::ResponseAsync)
@@ -256,5 +320,11 @@ describe Ansible::Runner do
       expect(MiqQueue.count).to eq(1)
       expect(MiqQueue.first.zone).to eq(zone.name)
     end
+  end
+
+  def expect_galaxy_roles_fetched
+    content_double = instance_double(Ansible::Content)
+    expect(Ansible::Content).to receive(:new).with("/path/to/my").and_return(content_double)
+    expect(content_double).to receive(:fetch_galaxy_roles)
   end
 end

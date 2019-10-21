@@ -1,5 +1,6 @@
 class ManageIQ::Providers::EmbeddedAnsible::AutomationManager::ConfigurationScript < ManageIQ::Providers::EmbeddedAutomationManager::ConfigurationScript
-  FRIENDLY_NAME = "Ansible Automation Inside Job Template".freeze
+  FRIENDLY_NAME = "Embedded Ansible Job Template".freeze
+  DEFAULT_EXECUTION_TTL = 100.minutes # automate state machine aborts after 100 retries at a minite interval
 
   include ManageIQ::Providers::EmbeddedAnsible::CrudCommon
 
@@ -33,14 +34,16 @@ class ManageIQ::Providers::EmbeddedAnsible::AutomationManager::ConfigurationScri
 
     extra_vars = merge_extra_vars(vars[:extra_vars])
 
-    checkout_dir  = checkout_git_repository # TODO: what will cleanup this dir?
-    playbook_vars = { :playbook_path => File.join(checkout_dir, parent.name) }
+    playbook_vars = {
+      :configuration_script_source_id => parent.configuration_script_source_id,
+      :playbook_relative_path         => parent.name
+    }
 
     credentials = collect_credentials(vars)
 
     kwargs = {:become_enabled => vars[:become_enabled]}
-    kwargs[:timeout]   = vars[:execution_ttl].to_i.minutes if vars[:execution_ttl].present?
-    kwargs[:verbosity] = vars[:verbosity].to_i             if vars[:verbosity].present?
+    kwargs[:timeout]   = vars[:execution_ttl].present? ? vars[:execution_ttl].to_i.minutes : DEFAULT_EXECUTION_TTL
+    kwargs[:verbosity] = vars[:verbosity].to_i if vars[:verbosity].present?
 
     workflow.create_job({}, extra_vars, playbook_vars, vars[:hosts], credentials, kwargs).tap do |job|
       job.signal(:start)
@@ -65,11 +68,5 @@ class ManageIQ::Providers::EmbeddedAnsible::AutomationManager::ConfigurationScri
       :network_credential,
       :vault_credential
     ).compact
-  end
-
-  def checkout_git_repository
-    Dir.mktmpdir("ansible-playbook-repo").tap do |dir|
-      parent.configuration_script_source.checkout_git_repository(dir)
-    end
   end
 end

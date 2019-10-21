@@ -834,6 +834,13 @@
     - MoveIntoResourcePool
     :VmSuspendedEvent:
     - SuspendVM_Task
+:git_repository_proxy:
+  :host:
+  :password:
+  :port:
+  :user:
+  :scheme:
+  :path:
 :help_menu:
   :documentation:
     :type: default
@@ -863,12 +870,6 @@
     :user:
     :scheme:
   :gce:
-    :host:
-    :password:
-    :port:
-    :user:
-    :scheme:
-  :embedded_ansible:
     :host:
     :password:
     :port:
@@ -979,6 +980,7 @@
     :keep_reports: 6.months
     :purge_window_size: 100
   :queue_timeout: 1.hour
+  :use_sql_view: false
 :repository_scanning:
   :defaultsmartproxy:
 :server:

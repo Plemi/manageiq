@@ -115,6 +115,7 @@ class ExtManagementSystem < ApplicationRecord
   serialize :options
 
   supports :refresh_ems
+  supports_not :assume_role
 
   def hostname_uniqueness_valid?
     return unless hostname_required?
@@ -233,6 +234,11 @@ class ExtManagementSystem < ApplicationRecord
   # @param orig_zone [Integer] because of zone of child manager can be changed by parent manager's ensure_managers() callback
   #                            we need to specify original zone for children explicitly
   def pause!(orig_zone = nil)
+    if (orig_zone || zone) == Zone.maintenance_zone
+      _log.warn("Trying to pause paused EMS [#{name}] id [#{id}]. Skipping.")
+      return
+    end
+
     _log.info("Pausing EMS [#{name}] id [#{id}].")
     update!(
       :zone_before_pause => orig_zone || zone,
@@ -558,7 +564,7 @@ class ExtManagementSystem < ApplicationRecord
   end
 
   def destroy(task_id = nil)
-    disable! if enabled?
+    disable!(:validate => false) if enabled?
 
     _log.info("Destroying #{child_managers.count} child_managers")
     child_managers.destroy_all
@@ -838,9 +844,10 @@ class ExtManagementSystem < ApplicationRecord
     errors.add(:base, "emstype #{self.class.name} is not supported for create") unless ExtManagementSystem.supported_types_and_descriptions_hash.key?(emstype)
   end
 
-  def disable!
+  def disable!(validate: true)
     _log.info("Disabling EMS [#{name}] id [#{id}].")
-    update!(:enabled => false)
+    self.enabled = false
+    save(:validate => validate)
     _log.info("Disabling EMS [#{name}] id [#{id}] successful.")
   end
 

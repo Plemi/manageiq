@@ -92,8 +92,18 @@ class CustomButtonSet < ApplicationRecord
     options.each_with_object(dup) { |(k, v), button_set| button_set.send("#{k}=", v) }.tap do |cbs|
       cbs.guid = SecureRandom.uuid
       cbs.name = "#{name}-#{cbs.guid}"
+      cbs.set_data[:button_order] = []
+      cbs.set_data[:applies_to_id] = options[:owner].id
       cbs.save!
-      custom_buttons.each { |cb| cbs.add_member(cb.copy(:applies_to => options[:owner])) }
+      custom_buttons.each do |cb|
+        cb_copy = cb.copy(:applies_to => options[:owner])
+        cbs.add_member(cb_copy)
+        options[:owner][:options][:button_order] ||= []
+        options[:owner][:options][:button_order] << "cb-#{cb_copy.id}"
+        cbs.set_data[:button_order] << cb_copy.id
+        options[:owner].save!
+        cbs.save!
+      end
     end
   end
 

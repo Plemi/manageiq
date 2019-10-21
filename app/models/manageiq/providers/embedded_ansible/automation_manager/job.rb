@@ -9,6 +9,8 @@ class ManageIQ::Providers::EmbeddedAnsible::AutomationManager::Job < ManageIQ::P
 
   belongs_to :miq_task, :foreign_key => :ems_ref, :inverse_of => false
 
+  virtual_has_many :job_plays
+
   #
   # Allowed options are
   #   :limit      => String
@@ -18,6 +20,8 @@ class ManageIQ::Providers::EmbeddedAnsible::AutomationManager::Job < ManageIQ::P
     template_ref = template.new_record? ? nil : template
     new(:name                  => template.name,
         :ext_management_system => template.manager,
+        :verbosity             => template.variables["verbosity"].to_i,
+        :authentications       => collect_authentications(template.manager, options),
         :job_template          => template_ref).tap do |stack|
       stack.send(:update_with_provider_object, raw_create_stack(template, options))
     end
@@ -53,7 +57,7 @@ class ManageIQ::Providers::EmbeddedAnsible::AutomationManager::Job < ManageIQ::P
   end
 
   def job_plays
-    []
+    resources.where(:resource_category => 'job_play').order(:start_time)
   end
 
   # Intend to be called by UI to display stdout. The stdout is stored in MiqTask#task_results or #message if error
@@ -97,18 +101,63 @@ class ManageIQ::Providers::EmbeddedAnsible::AutomationManager::Job < ManageIQ::P
   end
   private_class_method :reconcile_extra_vars_keys
 
-  def update_with_provider_object(raw_job)
-    self.miq_task ||= raw_job.miq_task
+  def self.collect_authentications(manager, options)
+    credential_ids = options.values_at(
+      :credential,
+      :cloud_credential,
+      :network_credential,
+      :vault_credential
+    ).compact
+    manager.credentials.where(:id => credential_ids)
+  end
+  private_class_method :collect_authentications
 
-    update_attributes!(
-      :status      => miq_task.state,
-      :start_time  => miq_task.started_on,
-      :finish_time => raw_status.completed? ? miq_task.updated_on : nil
-    )
+  def update_with_provider_object(raw_job)
+    transaction do
+      self.miq_task ||= raw_job.miq_task
+
+      self.status      = miq_task.state
+      self.start_time  = miq_task.started_on
+      self.finish_time = raw_status.completed? ? miq_task.updated_on : nil
+
+      update_plays
+      save!
+    end
+  end
+
+  def update_plays
+    plays = raw_stdout_json.select do |playbook_event|
+      playbook_event["event"] == "playbook_on_play_start"
+    end.collect do |play|
+      {
+        :name              => play["event_data"]["play"],
+        :resource_status   => play["failed"] ? 'failed' : 'successful',
+        :start_time        => play["created"],
+        :ems_ref           => play["uuid"],
+        :resource_category => "job_play"
+      }
+    end
+
+    # Set each play's finish_time to the next play's start time, with the
+    # final play's finish time set to the entire job's finish time.
+    plays.each_cons(2) do |last_play, play|
+      last_play[:finish_time] = play[:start_time]
+    end
+    plays[-1][:finish_time] = finish_time if plays.any?
+
+    old_resources = resources.index_by(&:ems_ref)
+    self.resources = plays.collect do |play_hash|
+      if (old_resource = old_resources[play_hash[:ems_ref].to_s])
+        old_resource.update!(play_hash)
+        old_resource
+      else
+        OrchestrationStackResource.new(play_hash)
+      end
+    end
   end
 
   def raw_stdout_json
-    miq_task.context_data[:ansible_runner_stdout]
+    miq_task.try(&:context_data).try(:[], :ansible_runner_stdout) || []
   end
 
   def raw_stdout_txt
@@ -116,6 +165,8 @@ class ManageIQ::Providers::EmbeddedAnsible::AutomationManager::Job < ManageIQ::P
   end
 
   def raw_stdout_html
-    TerminalToHtml.render(raw_stdout_txt)
+    text = raw_stdout_txt
+    text = _("No output available") if text.blank?
+    TerminalToHtml.render(text)
   end
 end
