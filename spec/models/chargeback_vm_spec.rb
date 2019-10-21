@@ -1259,6 +1259,41 @@ describe ChargebackVm do
 
           subject! { ChargebackVm.build_results_for_report_ChargebackVm(options_tenant).first }
 
+          context "tenants don't exist" do
+            let(:unknown_number) { 999_999_999 }
+            let(:options_with_tenant_only_in_default_region) { base_options.merge(:interval => 'monthly', :tenant_id => tenant_default_region.id).tap { |t| t.delete(:tag) } }
+            let!(:tenant_default_region) { FactoryBot.create(:tenant, :parent => Tenant.root_tenant) }
+
+            it "generates empty result and doesn't raise error" do
+              exception_message = "Unable to find tenant '#{tenant_default_region.name}' (based on tenant id '#{tenant_default_region.id}' from default region) in region #{region_1.region}."
+
+              log_stub = instance_double("_log")
+              expect(described_class).to receive(:_log).and_return(log_stub).at_least(:once)
+
+              expect(log_stub).to receive(:debug).with(any_args).at_least(:once)
+              expect(log_stub).to receive(:info).with(exception_message + " Calculating chargeback costs skipped for #{tenant_default_region.id} in region #{region_1.region}.").at_least(:once)
+              expect(log_stub).to receive(:info).with(any_args).at_least(:once)
+              expect(ChargebackVm.build_results_for_report_ChargebackVm(options_with_tenant_only_in_default_region).flatten).to be_empty
+            end
+
+            context "tenant in default region doesn't exists" do
+              let(:options_with_missing_tenant) { base_options.merge(:interval => 'monthly', :tenant_id => unknown_number).tap { |t| t.delete(:tag) } }
+
+              it "generates empty result and doesn't raise error" do
+                exception_message = "Unable to find tenant '#{unknown_number}'."
+
+                log_stub = instance_double("_log")
+                expect(described_class).to receive(:_log).and_return(log_stub).at_least(:once)
+
+                expect(log_stub).to receive(:debug).with(any_args).at_least(:once)
+                expect(log_stub).to receive(:info).with(exception_message + " Calculating chargeback costs skipped for #{unknown_number} in region #{region_1.region}.").at_least(:once)
+                expect(log_stub).to receive(:info).with(any_args).at_least(:once)
+
+                expect(ChargebackVm.build_results_for_report_ChargebackVm(options_with_missing_tenant).flatten).to be_empty
+              end
+            end
+          end
+
           it "report from all regions and only for tenant_1" do
             skip('this feature needs to be added to new chargeback rating') if Settings.new_chargeback
 
