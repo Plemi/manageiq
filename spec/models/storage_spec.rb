@@ -33,7 +33,7 @@ describe Storage do
     allow(Storage).to receive_messages(:scan_watchdog_interval => scan_watchdog_interval)
     start = Time.parse("Sun March 10 01:00:00 UTC 2010")
     Timecop.travel(start) do
-      expect(Storage.scan_watchdog_deliver_on - (start + scan_watchdog_interval)).to be_within(0.001).of(0.0)
+      expect(Storage.scan_watchdog_deliver_on - (start + scan_watchdog_interval)).to be_within(1).of(0.0)
     end
   end
 
@@ -379,7 +379,7 @@ describe Storage do
           expect(miq_task.context_data[:pending].length).to eq(0)
           expect(miq_task.pct_complete).to eq(100)
 
-          miq_task.update_attributes!(:state => "Finished")
+          miq_task.update!(:state => "Finished")
           miq_task.destroy
           expect(Storage).to receive(:scan_queue).never
           expect_any_instance_of(MiqTask).to receive(:update_status).never

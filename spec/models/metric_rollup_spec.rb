@@ -15,7 +15,7 @@ describe MetricRollup do
     it "updates an existing object correctly" do
       metric = described_class.create!(:timestamp => Time.now.utc, :cpu_usage_rate_average => 50.0)
       old_id = metric.id
-      metric.update_attributes!(:cpu_usage_rate_average => 75.0)
+      metric.update!(:cpu_usage_rate_average => 75.0)
       expect(metric.id).to eq(old_id)
     end
   end
@@ -34,7 +34,7 @@ describe MetricRollup do
       # TODO: that causes the error "ActiveRecord::ConfigurationError: nil"
       # TODO: instead of the expected "ActiveRecord::EagerLoadPolymorphicError" error.
       expect do
-        Tagging.includes(:taggable => {}).where('bogus_table.column = 1').references(:bogus_table => {}).to_a
+        Tagging.includes(:taggable => {}).where('bogus_table.column = 1').references(:bogus_table).to_a
       end.to raise_error ActiveRecord::EagerLoadPolymorphicError
     end
   end

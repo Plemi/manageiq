@@ -8,6 +8,7 @@ module ManageIQ::Providers
     include AvailabilityMixin
 
     has_many :distributed_virtual_switches, :dependent => :destroy, :foreign_key => :ems_id, :inverse_of => :ext_management_system
+    has_many :distributed_virtual_lans, -> { distinct }, :through => :distributed_virtual_switches, :source => :lans
     has_many :host_virtual_switches, -> { distinct }, :through => :hosts
 
     has_many :host_hardwares,             :through => :hosts, :source => :hardware
@@ -23,6 +24,8 @@ module ManageIQ::Providers
     has_many :networks,                   :through => :hardwares
     has_many :guest_devices,              :through => :hardwares
     has_many :ems_custom_attributes,      :through => :vms_and_templates
+
+    include HasManyOrchestrationStackMixin
 
     class << model_name
       define_method(:route_key) { "ems_infras" }

@@ -8,9 +8,13 @@ module Rbac
       Authentication
       AvailabilityZone
       CloudNetwork
+      CloudObjectStoreContainer
+      CloudObjectStoreObject
       CloudSubnet
       CloudTenant
       CloudVolume
+      CloudVolumeSnapshot
+      CloudVolumeType
       ConfigurationProfile
       ConfigurationScriptBase
       ConfigurationScriptSource
@@ -171,7 +175,8 @@ module Rbac
     # @option options :conditions    [Hash|String|Array<String>]
     # @option options :where_clause  []
     # @option options :sub_filter
-    # @option options :include_for_find [Array<Symbol>]
+    # @option options :include_for_find [Array<Symbol>, Hash{Symbol => Symbol,Hash,Array}] models included but not in query
+    # @option options :references   [Array<Symbol>], models used by select and where. If not passed, uses include_for_find instead
     # @option options :filter       [MiqExpression] (optional)
 
     # @option options :user         [User]     (default: current_user)
@@ -207,6 +212,7 @@ module Rbac
       where_clause      = options[:where_clause]
       sub_filter        = options[:sub_filter]
       include_for_find  = options[:include_for_find]
+      references        = options.fetch(:references) { include_for_find }
       search_filter     = options[:filter]
 
       limit             = options[:limit]  || targets.try(:limit_value)
@@ -256,7 +262,6 @@ module Rbac
 
       exp_sql, exp_includes, exp_attrs = search_filter.to_sql(tz) if search_filter && !klass.try(:instances_are_derived?)
       attrs[:apply_limit_in_sql] = (exp_attrs.nil? || exp_attrs[:supported_by_sql]) && user_filters["belongsto"].blank?
-      skip_references            = skip_references?(scope, options, attrs, exp_sql, exp_includes)
 
       # for belongs_to filters, scope_targets uses scope to make queries. want to remove limits for those.
       # if you note, the limits are put back into scope a few lines down from here
@@ -266,12 +271,15 @@ module Rbac
               .includes(include_for_find).includes(exp_includes)
               .order(order)
 
-      scope = include_references(scope, klass, include_for_find, exp_includes, skip_references)
+      scope = include_references(scope, klass, references, exp_includes)
       scope = scope.limit(limit).offset(offset) if attrs[:apply_limit_in_sql]
 
       if inline_view?(options, scope)
         inner_scope = scope.except(:select, :includes, :references)
         scope.includes_values.each { |hash| inner_scope = add_joins(klass, inner_scope, hash) }
+        if inner_scope.order_values.present?
+          inner_scope = apply_select(klass, inner_scope, select_from_order_columns(inner_scope.order_values))
+        end
         scope = scope.from(Arel.sql("(#{inner_scope.to_sql})").as(scope.table_name))
                      .except(:offset, :limit, :where)
 
@@ -326,62 +334,37 @@ module Rbac
         scope.respond_to?(:includes_values)
     end
 
-    # This is a very primitive way of determining whether we want to skip
-    # adding references to the query.
+    # Convert an order by column to the select columns
     #
-    # For now, basically it checks if the caller has not provided :extra_cols,
-    # or if the MiqExpression can't apply the limit in SQL.  If both of those
-    # are true, then we don't add `.references` to the scope.
+    # We assume that all traditional columns are already in the select
+    # So this just adds the non columns in the order (i.e.: functions and subqueries)
     #
-    # Also, if for whatever reason we are passed a
-    # `ActiveRecord::NullRelation`, make sure that we don't skip references.
-    # This will cause the EXPLAIN to blow up since `.to_sql` gets changed to
-    # always return `""`... even though at the end of the day, we will always
-    # get back zero records from the query.
+    # @param [Array] columns the order by clause
+    # @return [Array] columns useable in the select clause
     #
-    # If still invalid, there is an EXPLAIN check in #include_references that
-    # will make sure the query is valid and if not, will include the references
-    # as done previously.
-    def skip_references?(scope, options, attrs, exp_sql, exp_includes)
-      return false if scope.singleton_class.included_modules.include?(ActiveRecord::NullRelation)
-      options[:skip_references] ||
-      (options[:extra_cols].blank? &&
-        (!attrs[:apply_limit_in_sql] && (exp_sql.nil? || exp_includes.nil?)))
+    # this method is similar to Connection#columns_for_distinct, but more aggressive
+    #
+    # For a query with a DISTINCT, all columns in the ORDER BY clause
+    # need to be in the SELECT clause. This method gives us the columns for the SELECT.
+    # We currently assume that all regular columns are already in the SELECT.
+    # So this is just returning the functions (e.g. LOWER(name))
+    def select_from_order_columns(columns)
+      columns.compact.map do |column|
+        if column.kind_of?(Arel::Nodes::Ordering)
+          column.expr
+        else
+          column = column.to_sql if column.respond_to?(:to_sql)
+          column.kind_of?(String) ? column.gsub(/ (DESC|ASC)/i, '') : column
+        end
+      end.reject do |column|
+        column.kind_of?(Arel::Attributes::Attribute) ||
+          column.kind_of?(Symbol) ||
+          (column.kind_of?(String) && column =~ /^("?[a-z_0-9]+"?[.])?"?[a-z_0-9]+"?$/i)
+      end
     end
 
-    def include_references(scope, klass, include_for_find, exp_includes, skip)
-      if skip
-        # If we are in a transaction, we don't want to polute that
-        # transaction with a failed EXPLAIN.  We use a SQL SAVEPOINT (which is
-        # created via `transaction(:requires_new => true)`) to prevent that
-        # from being an issue (happens in tests with transactional fixtures)
-        #
-        # See https://stackoverflow.com/a/31146267/3574689
-        valid_skip = MiqDatabase.transaction(:requires_new => true) do
-          begin
-            ActiveRecord::Base.connection.explain(scope.to_sql)
-          rescue ActiveRecord::StatementInvalid => e
-            unless Rails.env.production?
-              warn "There was an issue with the Rbac filter without references!"
-              warn "Consider trying to fix this edge case in Rbac::Filterer!  Error Below:"
-              warn e.message
-              warn e.backtrace
-            end
-            # returns nil
-            raise ActiveRecord::Rollback
-          end
-        end
-        # If the result of the transaction is non-nil, then the block was
-        # successful and didn't trigger the ActiveRecord::Rollback, so we can
-        # return the scope as is.
-        return scope if valid_skip
-      end
-
-      ref_includes = Hash(include_for_find).merge(Hash(exp_includes))
-      unless polymorphic_include?(klass, ref_includes)
-        scope = scope.references(include_for_find).references(exp_includes)
-      end
-      scope
+    def include_references(scope, klass, include_for_find, exp_includes)
+      scope.references(klass.includes_to_references(include_for_find)).references(klass.includes_to_references(exp_includes))
     end
 
     # @param includes [Array, Hash]
@@ -389,24 +372,13 @@ module Rbac
       return scope unless includes
       includes = Array(includes) unless includes.kind_of?(Enumerable)
       includes.each do |association, value|
-        if table_include?(klass, association)
+        reflection = klass.reflect_on_association(association)
+        if reflection && !reflection.polymorphic?
           scope = value ? scope.left_outer_joins(association => value) : scope.left_outer_joins(association)
+          scope = scope.distinct if reflection.try(:collection?)
         end
       end
       scope
-    end
-
-    # this is a reference to a non polymorphic table
-    def table_include?(target_klass, association)
-      reflection = target_klass.reflect_on_association(association)
-      reflection && !reflection.polymorphic?
-    end
-
-    def polymorphic_include?(target_klass, includes)
-      includes.keys.any? do |incld|
-        reflection = target_klass.reflect_on_association(incld)
-        reflection && reflection.polymorphic?
-      end
     end
 
     def filtered(objects, options = {})
@@ -665,7 +637,7 @@ module Rbac
     end
 
     def lookup_user_group(user, userid, miq_group, miq_group_id)
-      user ||= (userid && User.find_by_userid(userid)) || User.current_user
+      user ||= (userid && User.lookup_by_userid(userid)) || User.current_user
       miq_group_id ||= miq_group.try!(:id)
       return [user, user.current_group] if user && user.current_group_id.to_s == miq_group_id.to_s
 
@@ -742,7 +714,9 @@ module Rbac
     end
 
     def apply_select(klass, scope, extra_cols)
-      scope.select(scope.select_values.blank? ? klass.arel_table[Arel.star] : nil).select(extra_cols)
+      return scope if extra_cols.blank?
+
+      (scope.select_values.blank? ? scope.select(klass.arel_table[Arel.star]) : scope).select(extra_cols)
     end
 
     def get_belongsto_matches(blist, klass)
@@ -766,8 +740,12 @@ module Rbac
 
     def belongsto_association_filtered?(vcmeta, klass)
       if [ExtManagementSystem, Host].any? { |x| vcmeta.kind_of?(x) }
-        # Eject early if true
-        return true if associated_belongsto_models.any? { |associated| klass <= associated }
+        # Eject early if klass(requested for RBAC check) is allowed to be filtered by
+        # belongsto filtering generally and whether relation (based on the klass) exists on object
+        # from belongsto filter at all.
+        return true if associated_belongsto_models.any? do |associated|
+          klass <= associated && vcmeta.respond_to?(associated.base_model.to_s.tableize)
+        end
       end
 
       if vcmeta.kind_of?(ManageIQ::Providers::NetworkManager)

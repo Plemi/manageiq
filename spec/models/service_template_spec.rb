@@ -228,22 +228,22 @@ describe ServiceTemplate do
     end
 
     it "with service_type of atomic" do
-      @st1.update_attributes(:service_type => described_class::SERVICE_TYPE_ATOMIC)
+      @st1.update(:service_type => described_class::SERVICE_TYPE_ATOMIC)
       expect(@st1.type_display).to eq('Item')
     end
 
     it "with service_type of composite" do
-      @st1.update_attributes(:service_type => described_class::SERVICE_TYPE_COMPOSITE)
+      @st1.update(:service_type => described_class::SERVICE_TYPE_COMPOSITE)
       expect(@st1.type_display).to eq('Bundle')
     end
 
     it "with user service_type" do
-      @st1.update_attributes(:service_type => 'user')
+      @st1.update(:service_type => 'user')
       expect(@st1.type_display).to eq('User')
     end
 
     it "with no service_type" do
-      @st1.update_attributes(:service_type => nil)
+      @st1.update(:service_type => nil)
       expect(@st1.type_display).to eq('Unknown')
     end
   end
@@ -254,17 +254,17 @@ describe ServiceTemplate do
     end
 
     it "with service_type of unknown" do
-      @st1.update_attributes(:service_type => 'user')
+      @st1.update(:service_type => 'user')
       expect(@st1.atomic?).to be_falsey
     end
 
     it "with service_type of atomic" do
-      @st1.update_attributes(:service_type => described_class::SERVICE_TYPE_ATOMIC)
+      @st1.update(:service_type => described_class::SERVICE_TYPE_ATOMIC)
       expect(@st1.atomic?).to be_truthy
     end
 
     it "with service_type of composite" do
-      @st1.update_attributes(:service_type => described_class::SERVICE_TYPE_COMPOSITE)
+      @st1.update(:service_type => described_class::SERVICE_TYPE_COMPOSITE)
       expect(@st1.atomic?).to be_falsey
     end
   end
@@ -275,17 +275,17 @@ describe ServiceTemplate do
     end
 
     it "with service_type of unknown" do
-      @st1.update_attributes(:service_type => 'user')
+      @st1.update(:service_type => 'user')
       expect(@st1.composite?).to be_falsey
     end
 
     it "with service_type of atomic" do
-      @st1.update_attributes(:service_type => described_class::SERVICE_TYPE_ATOMIC)
+      @st1.update(:service_type => described_class::SERVICE_TYPE_ATOMIC)
       expect(@st1.composite?).to be_falsey
     end
 
     it "with service_type of composite" do
-      @st1.update_attributes(:service_type => described_class::SERVICE_TYPE_COMPOSITE)
+      @st1.update(:service_type => described_class::SERVICE_TYPE_COMPOSITE)
       expect(@st1.composite?).to be_truthy
     end
   end
@@ -395,17 +395,17 @@ describe ServiceTemplate do
 
     it "should pass display attribute to created top level service" do
       @svc_a.display = true
-      expect(@svc_a.create_service(double(:options => {:dialog => {}}, :get_user => service_user)).display).to eq(true)
+      expect(@svc_a.create_service(double(:options => {:dialog => {}}, :get_user => service_user)).visible).to eq(true)
     end
 
     it "should set created child service's display to false" do
       @svc_a.display = true
       allow(@svc_b).to receive(:add_resource!)
-      expect(@svc_a.create_service(double(:options => {:dialog => {}}, :get_user => service_user), @svc_b).display).to eq(false)
+      expect(@svc_a.create_service(double(:options => {:dialog => {}}, :get_user => service_user), @svc_b).visible).to eq(false)
     end
 
     it "should set created service's display to false by default" do
-      expect(@svc_a.create_service(double(:options => {:dialog => {}}, :get_user => service_user)).display).to eq(false)
+      expect(@svc_a.create_service(double(:options => {:dialog => {}}, :get_user => service_user)).visible).to eq(false)
     end
 
     it "should return all parent services for a service" do
@@ -578,7 +578,7 @@ describe ServiceTemplate do
       end
 
       it 'not existing template' do
-        @ptr.update_attributes(:src_vm_id => 999)
+        @ptr.update(:src_vm_id => 999)
         expect(@st1.template_valid?).to be_falsey
         expect(@st1.template_valid_error_message).to include("Unable to find VM with Id [999]")
       end
@@ -623,7 +623,7 @@ describe ServiceTemplate do
       end
 
       it 'not existing template' do
-        @ptr.update_attributes(:src_vm_id => 999)
+        @ptr.update(:src_vm_id => 999)
         expect(@st2.template_valid?).to be_falsey
         expect(@st2.template_valid_error_message).to include("Unable to find VM with Id [999]")
       end
@@ -838,7 +838,7 @@ describe ServiceTemplate do
 
     before do
       @catalog_item = ServiceTemplate.create_catalog_item(catalog_item_options, user)
-      @catalog_item.update_attributes!(:options => @catalog_item.options.merge(:foo => 'bar'))
+      @catalog_item.update!(:options => @catalog_item.options.merge(:foo => 'bar'))
     end
 
     context "without config info" do
@@ -861,7 +861,7 @@ describe ServiceTemplate do
 
     context "with config info" do
       it 'updates the catalog item' do
-        @catalog_item.update_attributes!(:options => @catalog_item.options.merge(:config_info => 'bar'))
+        @catalog_item.update!(:options => @catalog_item.options.merge(:config_info => 'bar'))
         updated = @catalog_item.update_catalog_item(updated_catalog_item_options, user)
 
         expect(updated.resource_actions.pluck(:action)).to match_array(%w[Provision Reconfigure])
@@ -915,7 +915,8 @@ describe ServiceTemplate do
   context "#order" do
     let(:user) { FactoryBot.create(:user) }
     let(:resource_action) { FactoryBot.create(:resource_action, :action => "Provision") }
-    let(:service_template) { FactoryBot.create(:service_template, :resource_actions => [resource_action]) }
+    let(:service_template_catalog) { FactoryBot.create(:service_template_catalog) }
+    let(:service_template) { FactoryBot.create(:service_template, :resource_actions => [resource_action], :service_template_catalog => service_template_catalog, :display => true) }
     let(:resource_action_options) { {:target => service_template, :initiator => 'control', :submit_workflow => true} }
     let(:miq_request) { FactoryBot.create(:service_template_provision_request) }
     let!(:resource_action_workflow) { ResourceActionWorkflow.new({}, user, resource_action, resource_action_options) }
@@ -1110,6 +1111,23 @@ describe ServiceTemplate do
       it "archives the service_template" do
         expect { service_template.archive }.to raise_error("Cannot archive while in use")
         expect(service_template.reload.archived?).to be_falsy
+      end
+    end
+  end
+
+  context "#supports_order?" do
+    context 'when service_template cannot be displayed' do
+      it "returns the expected boolean value" do
+        st = FactoryBot.create(:service_template, :service_template_catalog => FactoryBot.create(:service_template_catalog), :display => false)
+        expect(st.supports_order?).to eql(false)
+        expect(st.unsupported_reason(:order)).to eq('Service template is not configured to be displayed')
+      end
+    end
+
+    context 'when service_template can be displayed' do
+      it "returns the expected boolean value" do
+        st = FactoryBot.create(:service_template, :service_template_catalog => FactoryBot.create(:service_template_catalog), :display => true)
+        expect(st.supports_order?).to eql(true)
       end
     end
   end

@@ -1,5 +1,5 @@
 raise "Ruby versions < 2.4.0 are unsupported!" if RUBY_VERSION < "2.4.0"
-raise "Ruby versions >= 2.6 are unsupported!" if RUBY_VERSION >= "2.6.0"
+raise "Ruby versions >= 2.7.0 are unsupported!" if RUBY_VERSION >= "2.7.0"
 
 source 'https://rubygems.org'
 
@@ -35,7 +35,7 @@ gem "byebug",                                          :require => false
 gem "color",                          "~>1.8"
 gem "config",                         "~>1.6.0",       :require => false
 gem "dalli",                          "=2.7.6",        :require => false
-gem "default_value_for",              "~>3.0.3"
+gem "default_value_for",              "~>3.3"
 gem "docker-api",                     "~>1.33.6",      :require => false
 gem "elif",                           "=0.1.0",        :require => false
 gem "fast_gettext",                   "~>2.0.1"
@@ -70,14 +70,15 @@ gem "rake",                           ">=11.0",        :require => false
 gem "rest-client",                    "~>2.0.0",       :require => false
 gem "ripper_ruby_parser",             "~>1.5.1",       :require => false
 gem "ruby-progressbar",               "~>1.7.0",       :require => false
-gem "rubyzip",                        "~>1.2.2",       :require => false
-gem "rugged",                         "~>0.27.0",      :require => false
+gem "rubyzip",                        "~>1.3.0",       :require => false
 gem "snmp",                           "~>1.2.0",       :require => false
+gem "sprockets",                      "~>3.0",         :require => false
 gem "sqlite3",                        "~>1.3.0",       :require => false
-gem "sys-filesystem",                 "~>1.2.0"
+gem "sys-filesystem",                 "~>1.3.1"
 gem "terminal",                                        :require => false
 
 # Modified gems (forked on Github)
+gem "rugged",                         "=0.28.2", :require => false,   :git => "https://github.com/ManageIQ/rugged.git", :tag => "v0.28.2-1", :submodules => true
 gem "ruport",                         "=1.7.0",                       :git => "https://github.com/ManageIQ/ruport.git", :tag => "v1.7.0-3"
 
 # In 1.9.3: Time.parse uses british version dd/mm/yyyy instead of american version mm/dd/yyyy
@@ -155,7 +156,7 @@ end
 
 group :ovirt, :manageiq_default do
   manageiq_plugin "manageiq-providers-ovirt"
-  gem "ovirt_metrics",                  "~>3.0.0",       :require => false
+  gem "ovirt_metrics",                  "~>3.0.1",       :require => false
 end
 
 group :scvmm, :manageiq_default do
@@ -191,16 +192,17 @@ group :graphql_api, :manageiq_default do
 end
 
 group :scheduler, :manageiq_default do
-  # Modified gems (forked on Github)
-  gem "rufus-scheduler", "=3.1.10.2", :git => "https://github.com/ManageIQ/rufus-scheduler.git", :require => false, :tag => "v3.1.10-2"
+  gem "rufus-scheduler"
 end
+# rufus has et-orbi dependency, v1.2.2 has patch for ConvertTimeToEoTime that we need
+gem "et-orbi",                          ">= 1.2.2"
 
 group :seed, :manageiq_default do
   manageiq_plugin "manageiq-content"
 end
 
 group :smartstate, :manageiq_default do
-  gem "manageiq-smartstate",            "~>0.2.19",       :require => false
+  gem "manageiq-smartstate",            "~>0.3.1",       :require => false
 end
 
 group :consumption, :manageiq_default do
@@ -219,7 +221,7 @@ group :v2v, :ui_dependencies do
 end
 
 group :web_server, :manageiq_default do
-  gem "puma",                           "~>3.7.0"
+  gem "puma",                           "~>4.2"
   gem "responders",                     "~>2.0"
   gem "ruby-dbus" # For external auth
   gem "secure_headers",                 "~>3.0.0"
@@ -237,6 +239,7 @@ end
 unless ENV["APPLIANCE"]
   group :development do
     gem "foreman"
+    gem "PoParser"
     gem "rubocop-performance", "~>1.3",    :require => false
     # ruby_parser is required for i18n string extraction
     gem "ruby_parser",                     :require => false
@@ -247,15 +250,18 @@ unless ENV["APPLIANCE"]
     gem "brakeman",         "~>3.3",    :require => false
     gem "capybara",         "~>2.5.0",  :require => false
     gem "coveralls",                    :require => false
-    gem "factory_bot",      "~>4.11.1", :require => false
+    gem "factory_bot",      "~>5.1",    :require => false
+
+    # TODO: faker is used for url generation in git repository factory and the lenovo
+    # provider, via a xclarity_client dependency
     gem "faker",            "~>1.8",    :require => false
-    gem "timecop",          "~>0.7.3",  :require => false
-    gem "vcr",              "~>3.0.2",  :require => false
-    gem "webmock",          "~>3.6.0",  :require => false
+    gem "timecop",          "~>0.9",    :require => false
+    gem "vcr",              "~>5.0",    :require => false
+    gem "webmock",          "~>3.7",    :require => false
   end
 
   group :development, :test do
     gem "parallel_tests"
-    gem "rspec-rails", "~>3.8.0"
+    gem "rspec-rails", "~>3.9.0"
   end
 end

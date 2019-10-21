@@ -49,7 +49,7 @@ describe MiqExpression do
           expect(report_fields).to include(volume_2_type_field_cost)
 
           # case: change name
-          volume_2.update_attributes!(:volume_type => 'NEW_TYPE_2')
+          volume_2.update!(:volume_type => 'NEW_TYPE_2')
           ChargebackVm.current_volume_types_clear_cache
           report_fields = described_class.reporting_available_fields(model).map(&:second)
           expect(report_fields).to include(volume_1_type_field_cost)
@@ -242,6 +242,21 @@ describe MiqExpression do
   end
 
   describe "#to_sql" do
+    it "returns nil if SQL generation for that expression is not supported" do
+      sql, * = MiqExpression.new("=" => {"field" => "Service-custom_1", "value" => ""}).to_sql
+      expect(sql).to be_nil
+    end
+
+    it "does not raise error and returns nil if SQL generation for expression is not supported and 'token' key present in expression's Hash" do
+      sql, * = MiqExpression.new("=" => {"field" => "Service-custom_1", "value" => ""}, :token => 1).to_sql
+      expect(sql).to be_nil
+    end
+
+    it "generates the SQL for an = expression if SQL generation for expression supported and 'token' key present in expression's Hash" do
+      sql, * = MiqExpression.new("=" => {"field" => "Vm-name", "value" => "foo"}, :token => 1).to_sql
+      expect(sql).to eq("\"vms\".\"name\" = 'foo'")
+    end
+
     it "generates the SQL for an EQUAL expression" do
       sql, * = MiqExpression.new("EQUAL" => {"field" => "Vm-name", "value" => "foo"}).to_sql
       expect(sql).to eq("\"vms\".\"name\" = 'foo'")
@@ -2070,48 +2085,6 @@ describe MiqExpression do
           expect(exp.to_ruby(tz)).to eq("val=<value ref=vm, type=datetime>/virtual/last_scan_on</value>; !val.nil? && val.to_time >= '2011-01-11T14:00:00Z'.to_time(:utc) && val.to_time <= '2011-01-11T14:59:59Z'.to_time(:utc)")
         end
       end
-    end
-  end
-
-  context 'value2tag' do
-    it 'dotted notation with Taq' do
-      expect(described_class.value2tag('Vm.managed-amazon:vm:name', "mapped:smartstate")).to eq ["vm", "/managed/amazon:vm:name/mapped:smartstate"]
-    end
-
-    it 'dotted notation with CountField' do
-      expect(described_class.value2tag('Vm.disks')).to eq ['vm', '/virtual/disks']
-    end
-
-    it 'dotted notation with CountField' do
-      expect(described_class.value2tag('Vm.host.policy_events')).to eq ['vm', '/virtual/host/policy_events']
-    end
-
-    it "dotted notation with value" do
-      expect(described_class.value2tag("Vm.host-name", "thing1")).to eq ["vm", "/virtual/host/name/thing1"]
-    end
-
-    it "value with escaped slash" do
-      expect(described_class.value2tag("Vm.host-name", "thing1/thing2")).to eq ["vm", "/virtual/host/name/thing1%2fthing2"]
-    end
-
-    it "user_tag" do
-      expect(described_class.value2tag("Vm.user_tag-name", "thing1")).to eq ["vm", "/user/name/thing1"]
-    end
-
-    it "model and column" do
-      expect(described_class.value2tag("Vm-name", "thing1")).to eq ["vm", "/virtual/name/thing1"]
-    end
-
-    it "managed" do
-      expect(described_class.value2tag("Vm.managed-host", "thing1")).to eq ["vm", "/managed/host/thing1"]
-    end
-
-    it "managed" do
-      expect(described_class.value2tag("Vm.managed-host")).to eq ["vm", "/managed/host"]
-    end
-
-    it "false value" do
-      expect(described_class.value2tag("MiqGroup.vms-disconnected", false)).to eq ["miqgroup", "/virtual/vms/disconnected/false"]
     end
   end
 

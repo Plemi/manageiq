@@ -97,6 +97,18 @@ class Tenant < ApplicationRecord
     self.class.regional_tenants(self)
   end
 
+  def nested_service_templates
+    ServiceTemplate.with_tenant(id)
+  end
+
+  def nested_providers
+    ExtManagementSystem.with_tenant(id)
+  end
+
+  def nested_ae_namespaces
+    MiqAeDomain.with_tenant(id)
+  end
+
   def self.regional_tenants(tenant)
     where(arel_table.grouping(Arel::Nodes::NamedFunction.new("LOWER", [arel_attribute(:name)]).eq(tenant.name.downcase)))
   end
@@ -136,7 +148,7 @@ class Tenant < ApplicationRecord
 
         name = name.to_s
         q = tenant_quotas.detect { |tq| tq.name == name } || tenant_quotas.build(:name => name)
-        q.update_attributes!(values)
+        q.update!(values)
         updated_keys << name
       end
       # Delete any quotas that were not passed in
@@ -337,13 +349,13 @@ class Tenant < ApplicationRecord
   end
 
   def create_tenant_group
-    update_attributes!(:default_miq_group => MiqGroup.create_tenant_group(self)) unless default_miq_group_id
+    update!(:default_miq_group => MiqGroup.create_tenant_group(self)) unless default_miq_group_id
     self
   end
 
   def ensure_can_be_destroyed
     errors.add(:base, _("A tenant with groups associated cannot be deleted.")) if miq_groups.non_tenant_groups.exists?
-    errors.add(:base, _("A tenant created by tenant mapping cannot be deleted.")) if source
+    errors.add(:base, _("A tenant created by tenant mapping cannot be deleted.")) if source&.persisted?
     throw :abort unless errors[:base].empty?
   end
 

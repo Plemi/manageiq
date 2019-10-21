@@ -1,8 +1,4 @@
 class ManageIQ::Providers::EmsRefreshWorkflow < Job
-  def self.create_job(options)
-    super(name, options)
-  end
-
   #
   # State-transition diagram:
   #                              :poll_native_task
@@ -44,7 +40,7 @@ class ManageIQ::Providers::EmsRefreshWorkflow < Job
       queue_signal(:error)
     else
       context[:refresh_task_ids] = task_ids
-      update_attributes!(:context => context)
+      update!(:context => context)
 
       queue_signal(:poll_refresh)
     end

@@ -10,11 +10,18 @@ module MiqReport::Seeding
         reports = where(:rpt_type => 'Default').where.not(:filename => nil).index_by do |f|
           seed_filename(f.filename)
         end
-
+        # seeding from files, :filename attribute of existing record may be changed in this process
         seed_files.each do |f|
-          seed_record(f, reports.delete(seed_filename(f)))
+          seed_record(f, reports[seed_filename(f)])
         end
 
+        # now remove Default reports which are not supplied as yaml anymore
+        reports = where(:rpt_type => 'Default').where.not(:filename => nil).index_by do |f|
+          seed_filename(f.filename)
+        end
+        seed_files.each do |f|
+          reports.delete(seed_filename(f))
+        end
         if reports.any?
           _log.info("Deleting the following MiqReport(s) as they no longer exist: #{reports.keys.sort.collect(&:inspect).join(", ")}")
 
@@ -62,11 +69,14 @@ module MiqReport::Seeding
         attrs[:template_type] = path.start_with?(REPORT_DIR.to_s) ? "report" : "compare"
 
         begin
-          report.update_attributes!(attrs)
+          report.update!(attrs)
         rescue ActiveRecord::RecordInvalid
           duplicate = find_by(:name => name)
           if duplicate&.rpt_type == "Custom"
             _log.warn("A custom report already exists with the name #{duplicate.name.inspect}.  Skipping...")
+          elsif duplicate
+            _log.warn("A default report named '#{duplicate.name.inspect}' loaded from '#{duplicate.filename}' already exists. Updating attributes of existing report...")
+            duplicate.update!(attrs)
           else
             raise
           end

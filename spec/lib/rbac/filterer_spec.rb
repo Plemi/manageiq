@@ -230,6 +230,42 @@ describe Rbac::Filterer do
         end
       end
 
+      context 'searching for instances of CloudObjectStoreContainer' do
+        let!(:cosc) { FactoryBot.create_list(:cloud_object_store_container, 2).first }
+
+        before do
+          cosc.tag_with('/managed/environment/prod', :ns => '*')
+        end
+
+        it 'lists only tagged CloudObjectStoreContainers' do
+          results = described_class.search(:class => CloudObjectStoreContainer, :user => user).first
+          expect(results).to match_array [cosc]
+        end
+
+        it 'lists only all CloudObjectStoreContainers' do
+          results = described_class.search(:class => CloudObjectStoreContainer, :user => admin_user).first
+          expect(results).to match_array CloudObjectStoreContainer.all
+        end
+      end
+
+      context 'searching for instances of CloudObjectStoreObject' do
+        let!(:coso) { FactoryBot.create_list(:cloud_object_store_object, 2).first }
+
+        before do
+          coso.tag_with('/managed/environment/prod', :ns => '*')
+        end
+
+        it 'lists only tagged CloudObjectStoreObject' do
+          results = described_class.search(:class => CloudObjectStoreObject, :user => user).first
+          expect(results).to match_array [coso]
+        end
+
+        it 'lists only all CloudObjectStoreObject' do
+          results = described_class.search(:class => CloudObjectStoreObject, :user => admin_user).first
+          expect(results).to match_array CloudObjectStoreObject.all
+        end
+      end
+
       context 'searching for instances of Lans' do
         let!(:lan) { FactoryBot.create_list(:lan, 2).first }
 
@@ -328,6 +364,24 @@ describe Rbac::Filterer do
           expect(results).to match_array [owner_tenant]
         end
       end
+
+      context 'searching for instances of CloudVolumeSnapshot' do
+        let!(:csv) { FactoryBot.create_list(:cloud_volume_snapshot, 2).first }
+
+        before do
+          csv.tag_with('/managed/environment/prod', :ns => '*')
+        end
+
+        it 'lists only tagged CloudVolumeSnapshot' do
+          results = described_class.search(:class => CloudVolumeSnapshot, :user => user).first
+          expect(results).to match_array [csv]
+        end
+
+        it 'lists only all CloudVolumeSnapshot' do
+          results = described_class.search(:class => CloudVolumeSnapshot, :user => admin_user).first
+          expect(results).to match_array CloudVolumeSnapshot.all
+        end
+      end
     end
 
     context 'with virtual custom attributes' do
@@ -383,9 +437,10 @@ describe Rbac::Filterer do
     context "with ContainerManagers with user roles" do
       let(:owned_ems) { FactoryBot.create(:ems_openshift) }
       let(:other_ems) { FactoryBot.create(:ems_openshift) }
+      let(:ems_without_containers) { FactoryBot.create(:ext_management_system) }
 
       before do
-        filters = ["/belongsto/ExtManagementSystem|#{owned_ems.name}"]
+        filters = ["/belongsto/ExtManagementSystem|#{owned_ems.name}", "/belongsto/ExtManagementSystem|#{ems_without_containers.name}"]
 
         owner_group.entitlement = Entitlement.new
         owner_group.entitlement.set_managed_filters([])
@@ -511,7 +566,7 @@ describe Rbac::Filterer do
       end
 
       it "does not add references without includes" do
-        expect(subject).to receive(:include_references).with(anything, Vm, nil, nil, true).and_call_original
+        expect(subject).to receive(:include_references).with(anything, Vm, nil, nil).and_call_original
         results
       end
 
@@ -525,7 +580,7 @@ describe Rbac::Filterer do
         end
 
         it "includes references" do
-          expect(subject).to receive(:include_references).with(anything, ::Vm, nil, {:host => {}}, false)
+          expect(subject).to receive(:include_references).with(anything, ::Vm, nil, :host => {})
                                                          .and_call_original
           expect(subject).to receive(:warn).never
           results
@@ -542,7 +597,7 @@ describe Rbac::Filterer do
         end
 
         it "does not add references since there isn't a SQL filter" do
-          expect(subject).to receive(:include_references).with(anything, Vm, {:evm_owner => {}}, nil, true).and_call_original
+          expect(subject).to receive(:include_references).with(anything, Vm, {:evm_owner => {}}, nil).and_call_original
           results
         end
 
@@ -551,8 +606,7 @@ describe Rbac::Filterer do
           let(:results)           { subject.search(search_with_where).first }
 
           it "will try to skip references to begin with" do
-            expect(subject).to receive(:include_references).with(anything, Vm, {:evm_owner => {}}, nil, true).and_call_original
-            expect(subject).to receive(:warn).exactly(4).times
+            expect(subject).to receive(:include_references).with(anything, Vm, {:evm_owner => {}}, nil).and_call_original
             results
           end
 
@@ -562,8 +616,7 @@ describe Rbac::Filterer do
             let(:results)     { subject.search(null_search).first }
 
             it "will not try to skip references" do
-              expect(subject).to receive(:include_references).with(anything, Vm, {:evm_owner => {}}, nil, false).and_call_original
-              expect(subject).to receive(:warn).never
+              expect(subject).to receive(:include_references).with(anything, Vm, {:evm_owner => {}}, nil).and_call_original
               results
             end
           end
@@ -584,11 +637,7 @@ describe Rbac::Filterer do
       end
 
       it "does not add references without includes" do
-        # empty string here is basically passing `.references(nil)`, and the
-        # extra empty hash here is from the MiqExpression (which will result in
-        # the same), both of which will no-op to when determining if there are
-        # joins in ActiveRecord, and will not create a JoinDependency query
-        expect(results.references_values).to match_array ["", "{}"]
+        expect(results.references_values).to eq []
       end
 
       context "with :include_for_find" do
@@ -601,7 +650,7 @@ describe Rbac::Filterer do
         end
 
         it "adds references" do
-          expect(results.references_values).to match_array ["{:evm_owner=>{}}", "{}"]
+          expect(results.references_values).to match_array %w[users]
         end
       end
     end
@@ -618,11 +667,7 @@ describe Rbac::Filterer do
       end
 
       it "does not add references with no includes" do
-        # The single empty string is the result of a nil from both the lack of
-        # a MiqExpression filter and the user filter, which is deduped in
-        # ActiveRecord's internals and results in a `.references(nil)`
-        # effectively
-        expect(results.references_values).to match_array [""]
+        expect(results.references_values).to eq []
       end
 
       context "with :include_for_find" do
@@ -634,7 +679,7 @@ describe Rbac::Filterer do
         end
 
         it "adds references" do
-          expect(results.references_values).to match_array ["", "{:evm_owner=>{}}"]
+          expect(results.references_values).to match_array %w[users]
         end
       end
     end
@@ -673,7 +718,7 @@ describe Rbac::Filterer do
       end
 
       it "leaving tenant doesnt find Vm" do
-        owner_user.update_attributes(:miq_groups => [other_user.current_group])
+        owner_user.update(:miq_groups => [other_user.current_group])
         User.with_user(owner_user) do
           results = described_class.search(:class => "Vm").first
           expect(results).to match_array [other_vm]
@@ -843,13 +888,13 @@ describe Rbac::Filterer do
 
         context "searching MiqTemplate" do
           it "can't see descendant tenant's templates" do
-            owned_template.update_attributes!(:tenant_id => child_tenant.id, :miq_group_id => child_group.id)
+            owned_template.update!(:tenant_id => child_tenant.id, :miq_group_id => child_group.id)
             results, = described_class.search(:class => "MiqTemplate", :miq_group_id => owner_group.id)
             expect(results).to match_array []
           end
 
           it "can see ancestor tenant's templates" do
-            owned_template.update_attributes!(:tenant_id => owner_tenant.id, :miq_group_id => owner_tenant.id)
+            owned_template.update!(:tenant_id => owner_tenant.id, :miq_group_id => owner_tenant.id)
             results, = described_class.search(:class => "MiqTemplate", :miq_group_id => child_group.id)
             expect(results).to match_array [owned_template]
           end
@@ -860,28 +905,28 @@ describe Rbac::Filterer do
           let(:child_child_group)  { FactoryBot.create(:miq_group, :tenant => child_child_tenant) }
 
           it "can't see descendant tenant's templates but can see descendant tenant's VMs" do
-            owned_template.update_attributes!(:tenant_id => child_child_tenant.id, :miq_group_id => child_child_group.id)
-            owned_vm.update_attributes(:tenant_id => child_child_tenant.id, :miq_group_id => child_child_group.id)
+            owned_template.update!(:tenant_id => child_child_tenant.id, :miq_group_id => child_child_group.id)
+            owned_vm.update(:tenant_id => child_child_tenant.id, :miq_group_id => child_child_group.id)
             results, = described_class.search(:class => "VmOrTemplate", :miq_group_id => child_group.id)
             expect(results).to match_array [owned_vm]
           end
 
           it "can see ancestor tenant's templates but can't see ancestor tenant's VMs" do
-            owned_template.update_attributes!(:tenant_id => owner_tenant.id, :miq_group_id => owner_group.id)
+            owned_template.update!(:tenant_id => owner_tenant.id, :miq_group_id => owner_group.id)
             results, = described_class.search(:class => "VmOrTemplate", :miq_group_id => child_group.id)
             expect(results).to match_array [owned_template]
           end
 
           it "can see ancestor tenant's templates and descendant tenant's VMs" do
-            owned_template.update_attributes!(:tenant_id => owner_tenant.id, :miq_group_id => owner_group.id)
-            owned_vm.update_attributes(:tenant_id => child_child_tenant.id, :miq_group_id => child_child_group.id)
+            owned_template.update!(:tenant_id => owner_tenant.id, :miq_group_id => owner_group.id)
+            owned_vm.update(:tenant_id => child_child_tenant.id, :miq_group_id => child_child_group.id)
             results, = described_class.search(:class => "VmOrTemplate", :miq_group_id => child_group.id)
             expect(results).to match_array [owned_template, owned_vm]
           end
 
           it "can't see descendant tenant's templates nor ancestor tenant's VMs" do
-            owned_template.update_attributes!(:tenant_id => child_child_tenant.id, :miq_group_id => child_child_group.id)
-            owned_vm.update_attributes(:tenant_id => owner_tenant.id, :miq_group_id => owner_group.id)
+            owned_template.update!(:tenant_id => child_child_tenant.id, :miq_group_id => child_child_group.id)
+            owned_vm.update(:tenant_id => owner_tenant.id, :miq_group_id => owner_group.id)
             results, = described_class.search(:class => "VmOrTemplate", :miq_group_id => child_group.id)
             expect(results).to match_array []
           end
@@ -1303,8 +1348,8 @@ describe Rbac::Filterer do
             group.save!
 
             ems1 = FactoryBot.create(:ems_vmware, :name => 'ems1')
-            @host1.update_attributes(:ext_management_system => ems1)
-            @host2.update_attributes(:ext_management_system => ems1)
+            @host1.update(:ext_management_system => ems1)
+            @host2.update(:ext_management_system => ems1)
 
             root = FactoryBot.create(:ems_folder, :name => "Datacenters")
             root.parent = ems1
@@ -1342,8 +1387,8 @@ describe Rbac::Filterer do
 
         before do
           @ems = FactoryBot.create(:ems_vmware, :name => 'ems1')
-          @host1.update_attributes(:ext_management_system => @ems)
-          @host2.update_attributes(:ext_management_system => @ems)
+          @host1.update(:ext_management_system => @ems)
+          @host2.update(:ext_management_system => @ems)
 
           @vfolder        = FactoryBot.create(:ems_folder, :name => "vm")
           @vfolder.parent = dc
@@ -1359,7 +1404,7 @@ describe Rbac::Filterer do
           objects = results.first
           expect(objects).to eq([])
 
-          @template.update_attributes(:ext_management_system => nil)
+          @template.update(:ext_management_system => nil)
           results = described_class.search(:class => "ManageIQ::Providers::Vmware::InfraManager::Template", :conditions => ["ems_id IS NULL"])
           objects = results.first
           expect(objects).to eq([@template])
@@ -2223,7 +2268,7 @@ describe Rbac::Filterer do
         service1, service2, _service3 = FactoryBot.create_list(:service, 3, :service_template => st)
         service1.tag_with("/managed/environment/prod", :ns => "*")
         service2.tag_with("/managed/environment/prod", :ns => "*")
-        service2.update_attributes(:service_template => nil)
+        service2.update(:service_template => nil)
 
         # exclude service2 (no service template)
         exp = YAML.safe_load("--- !ruby/object:MiqExpression
@@ -2274,6 +2319,56 @@ describe Rbac::Filterer do
                                          :order        => "services.id")
         expect(results.first).to eq(services1[0..2])
         expect(results.last[:auth_count]).to eq(4)
+      end
+
+      it "respects order" do
+        # for some reason, while all models respect the order,
+        # MiqRequest sometimes did not. (before we put order in both inner and outer sql)
+        reqs = FactoryBot.create_list(:automation_requests, 3, :requester => user)
+        # move last created record to more recent
+        reqs.first.update(:description => "something")
+        expected_order = [reqs.second, reqs.last, reqs.first]
+
+        recs, attrs = Rbac.search(:targets      => MiqRequest,
+                                  :extra_cols   => %w[id],
+                                  :use_sql_view => true,
+                                  :limit        => 3,
+                                  :user         => user,
+                                  :order        => :updated_on)
+
+        expect(attrs[:auth_count]).to eq(3)
+        expect(recs.map(&:id)).to eq(expected_order.map(&:id))
+
+        recs, attrs = Rbac.search(:targets      => MiqRequest,
+                                  :extra_cols   => %w[],
+                                  :use_sql_view => true,
+                                  :limit        => 3,
+                                  :user         => user,
+                                  :order        => {:updated_on => :desc})
+        expect(attrs[:auth_count]).to eq(3)
+        expect(recs.map(&:id)).to eq(expected_order.reverse.map(&:id))
+      end
+
+      it "remembers distinct" do
+        # create vms with many disks. so a missing distinct would return 3*3 => 9
+        vms = FactoryBot.create_list(:vm_infra, 3, :miq_group => tagged_group)
+        vms.each do |vm|
+          # used by rbac filter
+          vm.tag_with("/managed/environment/prod", :ns => "*")
+          hw = FactoryBot.create(:hardware, :cpu_sockets => 4, :memory_mb => 3.megabytes, :vm => vm)
+          FactoryBot.create_list(:disk, 3, :device_type => "disk", :size => 10_000, :hardware_id => hw.id)
+        end
+
+        recs, attrs = Rbac.search(:targets          => Vm,
+                                  :include_for_find => {:ext_management_system => {}, :hardware => {:disks => {}}, :tags => {}},
+                                  :extra_cols       => %w[ram_size_in_bytes],
+                                  :use_sql_view     => true,
+                                  :limit            => 20,
+                                  :user             => User.super_admin,
+                                  :order            => :updated_on)
+
+        expect(attrs[:auth_count]).to eq(3)
+        expect(recs.map(&:id)).to eq(vms.map(&:id))
       end
     end
   end
@@ -2364,31 +2459,30 @@ describe Rbac::Filterer do
   describe "#include_references (private)" do
     subject { described_class.new }
 
-    let(:skip)             { false }
     let(:klass)            { VmOrTemplate }
     let(:scope)            { klass.all }
     let(:include_for_find) { { :miq_server => {} } }
     let(:exp_includes)     { { :host => {} } }
 
     it "adds include_for_find .references to the scope" do
-      method_args      = [scope, klass, include_for_find, nil, skip]
+      method_args      = [scope, klass, include_for_find, nil]
       resulting_scope  = subject.send(:include_references, *method_args)
 
-      expect(resulting_scope.references_values).to eq(["{:miq_server=>{}}", ""])
+      expect(resulting_scope.references_values).to eq(%w[miq_servers])
     end
 
     it "adds exp_includes .references to the scope" do
-      method_args      = [scope, klass, nil, exp_includes, skip]
+      method_args      = [scope, klass, nil, exp_includes]
       resulting_scope  = subject.send(:include_references, *method_args)
 
-      expect(resulting_scope.references_values).to eq(["", "{:host=>{}}"])
+      expect(resulting_scope.references_values).to eq(%w[hosts])
     end
 
     it "adds include_for_find and exp_includes .references to the scope" do
-      method_args      = [scope, klass, include_for_find, exp_includes, skip]
+      method_args      = [scope, klass, include_for_find, exp_includes]
       resulting_scope  = subject.send(:include_references, *method_args)
 
-      expect(resulting_scope.references_values).to eq(["{:miq_server=>{}}", "{:host=>{}}"])
+      expect(resulting_scope.references_values).to eq(%w[miq_servers hosts])
     end
 
     context "if the include is polymorphic" do
@@ -2396,86 +2490,10 @@ describe Rbac::Filterer do
       let(:include_for_find) { { :resource => {} } }
 
       it "does not add .references to the scope" do
-        method_args      = [scope, klass, include_for_find, nil, skip]
+        method_args      = [scope, klass, include_for_find, nil]
         resulting_scope  = subject.send(:include_references, *method_args)
 
         expect(resulting_scope.references_values).to eq([])
-      end
-    end
-
-    context "when skip is passed as true" do
-      let(:skip) { true }
-
-      it "does not add .references to the scope" do
-        method_args      = [scope, klass, include_for_find, exp_includes, skip]
-        resulting_scope  = subject.send(:include_references, *method_args)
-
-        expect(resulting_scope.references_values).to eq([])
-      end
-
-      context "when the scope is invalid without .references" do
-        let(:scope)           { klass.where("hosts.name = 'foo'") }
-        let(:method_args)     { [scope, klass, include_for_find, exp_includes, skip] }
-        let(:resulting_scope) { subject.send(:include_references, *method_args) }
-
-        let(:explain_error_match) do
-          Regexp.new(Regexp.escape(<<~PG_ERR.chomp))
-            PG::UndefinedTable: ERROR:  missing FROM-clause entry for table "hosts"
-            LINE 1: EXPLAIN SELECT "vms".* FROM "vms" WHERE (hosts.name = 'foo')
-                                                             ^
-            : EXPLAIN SELECT "vms".* FROM "vms" WHERE (hosts.name = 'foo')
-          PG_ERR
-        end
-
-        it "adds .references to the scope" do
-          allow(subject).to receive(:warn)
-          expect(resulting_scope.references_values).to eq(["{:miq_server=>{}}", "{:host=>{}}"])
-        end
-
-        it "warns that there was an issue in test mode" do
-          # This next couple of lines is just used to check that some of the
-          # backtrace that we are dumping into the logs is what we expect will
-          # for sure be there, and not try to match the entire trace.
-          #
-          # Does a bit of line addition to avoid this being too brittle and
-          # breaking easily, but expect it to break if you update
-          # Rbac::Filterer#include_references
-          method_file, method_line = subject.method(:include_references).source_location
-          explain_stacktrace_includes = [
-            "#{method_file}:#{method_line + 10}:in `block in include_references'",
-            Thread.current.backtrace[1].gsub(/:\d*:/) { |sub| ":#{sub.tr(":", "").to_i + 7}:" }
-          ]
-
-          expect(subject).to receive(:warn).with("There was an issue with the Rbac filter without references!").ordered
-          expect(subject).to receive(:warn).with("Consider trying to fix this edge case in Rbac::Filterer!  Error Below:").ordered
-          expect(subject).to receive(:warn).with(explain_error_match).ordered
-          expect(subject).to receive(:warn).with(array_including(explain_stacktrace_includes)).ordered
-          resulting_scope
-        end
-
-        it "warns that there was an issue in development mode" do
-          expect(Rails).to receive(:env).and_return(ActiveSupport::StringInquirer.new("developement"))
-
-          # See above
-          method_file, method_line = subject.method(:include_references).source_location
-          explain_stacktrace_includes = [
-            "#{method_file}:#{method_line + 10}:in `block in include_references'",
-            Thread.current.backtrace[1].gsub(/:\d*:/) { |sub| ":#{sub.tr(":", "").to_i + 7}:" }
-          ]
-
-          expect(subject).to receive(:warn).with("There was an issue with the Rbac filter without references!").ordered
-          expect(subject).to receive(:warn).with("Consider trying to fix this edge case in Rbac::Filterer!  Error Below:").ordered
-          expect(subject).to receive(:warn).with(explain_error_match).ordered
-          expect(subject).to receive(:warn).with(array_including(explain_stacktrace_includes)).ordered
-          resulting_scope
-        end
-
-        it "does not warn that there was an issue in production mode" do
-          expect(Rails).to receive(:env).and_return(ActiveSupport::StringInquirer.new("production"))
-
-          expect(subject).to receive(:warn).never
-          resulting_scope
-        end
       end
     end
   end
@@ -2650,6 +2668,8 @@ describe Rbac::Filterer do
     let(:project1_user)         { FactoryBot.create(:user, :miq_groups => [project1_group]) }
     let(:project1_volume)       { FactoryBot.create(:cloud_volume, :ext_management_system => ems_openstack, :cloud_tenant => project1_cloud_tenant) }
     let(:project1_flavor)       { FactoryBot.create(:flavor, :ext_management_system => ems_openstack) }
+    let(:project1_c_o_store_container) { FactoryBot.create(:cloud_object_store_container, :ext_management_system => ems_openstack, :cloud_tenant => project1_cloud_tenant) }
+    let(:project1_c_o_store_object) { FactoryBot.create(:cloud_object_store_object, :cloud_object_store_container => project1_c_o_store_container, :cloud_tenant => project1_cloud_tenant, :ext_management_system => ems_openstack) }
     let(:project1_orchestration_stack) { FactoryBot.create(:orchestration_stack, :ext_management_system => ems_openstack, :cloud_tenant => project1_cloud_tenant) }
     let(:project1_c_t_flavor)   { FactoryBot.create(:cloud_tenant_flavor, :cloud_tenant => project1_cloud_tenant, :flavor => project1_flavor) }
     let(:project2_tenant)       { FactoryBot.create(:tenant, :source_type => 'CloudTenant') }
@@ -2659,15 +2679,19 @@ describe Rbac::Filterer do
     let(:project2_volume)       { FactoryBot.create(:cloud_volume, :ext_management_system => ems_openstack, :cloud_tenant => project2_cloud_tenant) }
     let(:project2_flavor)       { FactoryBot.create(:flavor, :ext_management_system => ems_openstack) }
     let(:project2_orchestration_stack) { FactoryBot.create(:orchestration_stack, :ext_management_system => ems_openstack, :cloud_tenant => project2_cloud_tenant) }
+    let(:project2_c_o_store_container) { FactoryBot.create(:cloud_object_store_container, :ext_management_system => ems_openstack, :cloud_tenant => project2_cloud_tenant) }
+    let(:project2_c_o_store_object) { FactoryBot.create(:cloud_object_store_object, :cloud_object_store_container => project2_c_o_store_container, :cloud_tenant => project2_cloud_tenant, :ext_management_system => ems_openstack) }
     let(:project2_c_t_flavor)   { FactoryBot.create(:cloud_tenant_flavor, :cloud_tenant => project2_cloud_tenant, :flavor => project2_flavor) }
     let(:ems_other)             { FactoryBot.create(:ems_cloud, :name => 'ems_other', :tenant_mapping_enabled => false) }
     let(:volume_other)          { FactoryBot.create(:cloud_volume, :ext_management_system => ems_other) }
     let(:tenant_other)          { FactoryBot.create(:tenant, :source_type => 'CloudTenant') }
     let(:cloud_tenant_other)    { FactoryBot.create(:cloud_tenant, :source_tenant => tenant_other, :ext_management_system => ems_other) }
     let(:flavor_other)          { FactoryBot.create(:flavor, :ext_management_system => ems_other) }
+    let(:cloud_object_store_container_other) { FactoryBot.create(:cloud_object_store_container, :ext_management_system => ems_other) }
+    let(:cloud_object_store_object_other) { FactoryBot.create(:cloud_object_store_object, :cloud_object_store_container => cloud_object_store_container_other, :ext_management_system => ems_other) }
     let(:orchestration_stack_other) { FactoryBot.create(:orchestration_stack, :ext_management_system => ems_other, :cloud_tenant => cloud_tenant_other) }
     let(:c_t_flavor_other)      { FactoryBot.create(:cloud_tenant_flavor, :cloud_tenant => cloud_tenant_other, :flavor => flavor_other) }
-    let!(:all_objects)          { [project1_volume, project2_volume, volume_other, cloud_tenant_other, project1_c_t_flavor, project2_c_t_flavor, c_t_flavor_other, project1_orchestration_stack, project2_orchestration_stack, orchestration_stack_other] }
+    let!(:all_objects)          { [project1_volume, project2_volume, volume_other, cloud_tenant_other, project1_c_t_flavor, project2_c_t_flavor, c_t_flavor_other, project1_orchestration_stack, project2_orchestration_stack, orchestration_stack_other, project1_c_o_store_container, project2_c_o_store_container, project1_c_o_store_object, project2_c_o_store_object, cloud_object_store_container_other, cloud_object_store_object_other] }
 
     it "lists its own project's objects and other objects where tenant_mapping is enabled" do
       ems_openstack.tenant_mapping_enabled = true
@@ -2698,6 +2722,24 @@ describe Rbac::Filterer do
 
       results = described_class.search(:class => Flavor, :user => other_user).first
       expect(results).to match_array [flavor_other]
+
+      results = described_class.search(:class => CloudObjectStoreObject, :user => project1_user).first
+      expect(results).to match_array [project1_c_o_store_object, cloud_object_store_object_other]
+
+      results = described_class.search(:class => CloudObjectStoreObject, :user => project2_user).first
+      expect(results).to match_array [project2_c_o_store_object, cloud_object_store_object_other]
+
+      results = described_class.search(:class => CloudObjectStoreObject, :user => other_user).first
+      expect(results).to match_array [cloud_object_store_object_other]
+
+      results = described_class.search(:class => CloudObjectStoreContainer, :user => project1_user).first
+      expect(results).to match_array [project1_c_o_store_container, cloud_object_store_container_other]
+
+      results = described_class.search(:class => CloudObjectStoreContainer, :user => project2_user).first
+      expect(results).to match_array [project2_c_o_store_container, cloud_object_store_container_other]
+
+      results = described_class.search(:class => CloudObjectStoreContainer, :user => other_user).first
+      expect(results).to match_array [cloud_object_store_container_other]
 
       results = described_class.search(:class => OrchestrationStack, :user => project1_user).first
       expect(results).to match_array [project1_orchestration_stack, orchestration_stack_other]
@@ -2738,6 +2780,24 @@ describe Rbac::Filterer do
 
       results = described_class.search(:class => Flavor, :user => other_user).first
       expect(results).to match_array Flavor.all
+
+      results = described_class.search(:class => CloudObjectStoreObject, :user => project1_user).first
+      expect(results).to match_array CloudObjectStoreObject.all
+
+      results = described_class.search(:class => CloudObjectStoreObject, :user => project2_user).first
+      expect(results).to match_array CloudObjectStoreObject.all
+
+      results = described_class.search(:class => CloudObjectStoreObject, :user => other_user).first
+      expect(results).to match_array CloudObjectStoreObject.all
+
+      results = described_class.search(:class => CloudObjectStoreContainer, :user => project1_user).first
+      expect(results).to match_array CloudObjectStoreContainer.all
+
+      results = described_class.search(:class => CloudObjectStoreContainer, :user => project2_user).first
+      expect(results).to match_array CloudObjectStoreContainer.all
+
+      results = described_class.search(:class => CloudObjectStoreContainer, :user => other_user).first
+      expect(results).to match_array CloudObjectStoreContainer.all
 
       results = described_class.search(:class => OrchestrationStack, :user => project1_user).first
       expect(results).to match_array OrchestrationStack.all
@@ -2881,6 +2941,54 @@ describe Rbac::Filterer do
       result = described_class.filtered(ServiceTemplate, :user => user_pineapple_3)
 
       expect(result.ids).to match_array([service_template_1_1.id])
+    end
+  end
+
+  # private method
+  describe ".select_from_order_columns" do
+    subject { described_class.new }
+    it "removes empty" do
+      expect(subject.select_from_order_columns([])).to eq([])
+      expect(subject.select_from_order_columns([nil])).to eq([])
+    end
+
+    it "removes string columns" do
+      expect(subject.select_from_order_columns(["name", "id", "vms.name", '"vms"."name"'])).to eq([])
+    end
+
+    it "removes ascending string columns" do
+      expect(subject.select_from_order_columns(ascenders(["name", "id", "vms.name", '"vms"."name"']))).to eq([])
+    end
+
+    # services.name desc (spec)
+    it "removes strings with sorting" do
+      expect(subject.select_from_order_columns(["name asc", "\"vms\".\"id\" desc", "id asc"])).to eq([])
+    end
+
+    it "removes ordered nodes" do
+      attribute_id = Vm.arel_table["id"] # <Attribute<id>>
+      expect(subject.select_from_order_columns(ascenders([attribute_id]))).to eq([])
+    end
+
+    it "removes nodes" do
+      attribute_id = Vm.arel_table["id"] # <Attribute<id>>
+      expect(subject.select_from_order_columns([attribute_id])).to eq([])
+    end
+
+    it "keeps sorting in subselects" do
+      expect(subject.select_from_order_columns(ascenders(["(select a from x desc)"]))).to eq(["(select a from x desc)"])
+    end
+
+    it "keeps function in ascending node" do
+      expect(subject.select_from_order_columns(ascenders(["lower(name)"]))).to eq(["lower(name)"])
+    end
+
+    it "keeps functions as ordered strings" do
+      expect(subject.select_from_order_columns(["lower(name) asc"])).to eq(["lower(name)"])
+    end
+
+    def ascenders(cols)
+      cols.map { |c| Arel::Nodes::Ascending.new(c) }
     end
   end
 

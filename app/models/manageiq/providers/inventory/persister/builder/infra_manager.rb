@@ -199,6 +199,13 @@ module ManageIQ::Providers
           )
         end
 
+        def distributed_virtual_lans
+          add_properties(
+            :manager_ref                  => %i(switch uid_ems),
+            :parent_inventory_collections => %i(distributed_virtual_switches),
+          )
+        end
+
         def subnets
           add_properties(
             :manager_ref                  => %i(lan ems_ref),
@@ -230,11 +237,22 @@ module ManageIQ::Providers
           add_common_default_values
         end
 
+        def storage_profile_storages
+          add_properties(
+            :manager_ref                  => %i[storage_profile storage],
+            :parent_inventory_collections => %i[storage_profiles]
+          )
+        end
+
         def ems_extensions
           add_common_default_values
         end
 
         def ems_licenses
+          add_common_default_values
+        end
+
+        def orchestration_templates
           add_common_default_values
         end
 

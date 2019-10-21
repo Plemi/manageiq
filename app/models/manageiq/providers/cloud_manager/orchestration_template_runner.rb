@@ -1,10 +1,5 @@
 class ManageIQ::Providers::CloudManager::OrchestrationTemplateRunner < ::Job
-  DEFAULT_EXECUTION_TTL = 10 # minutes
-
-  # options are job table columns, including options column which is the playbook context info
-  def self.create_job(options)
-    super(name, options)
-  end
+  DEFAULT_EXECUTION_TTL = 100.minutes
 
   def minimize_indirect
     @minimize_indirect = true if @minimize_indirect.nil?
@@ -12,21 +7,20 @@ class ManageIQ::Providers::CloudManager::OrchestrationTemplateRunner < ::Job
   end
 
   def current_job_timeout(_timeout_adjustment = 1)
-    @execution_ttl ||=
-      (options[:execution_ttl].present? ? options[:execution_ttl].try(:to_i) : DEFAULT_EXECUTION_TTL) * 60
+    @execution_ttl ||= options[:execution_ttl].present? ? options[:execution_ttl].to_i.minutes : DEFAULT_EXECUTION_TTL
   end
 
   def start
     time = Time.zone.now
-    update_attributes(:started_on => time)
-    miq_task.update_attributes(:started_on => time)
+    update(:started_on => time)
+    miq_task.update(:started_on => time)
     my_signal(false, :deploy_orchestration_stack, :priority => MiqQueue::HIGH_PRIORITY)
   end
 
   def update
     time = Time.zone.now
-    update_attributes(:started_on => time)
-    miq_task.update_attributes(:started_on => time)
+    update(:started_on => time)
+    miq_task.update(:started_on => time)
     my_signal(false, :update_orchestration_stack)
   end
 
@@ -38,7 +32,7 @@ class ManageIQ::Providers::CloudManager::OrchestrationTemplateRunner < ::Job
     )
     options[:orchestration_stack_id] = @orchestration_stack.id
     self.name = "#{name}, Orchestration Stack ID: #{@orchestration_stack.id}"
-    miq_task.update_attributes(:name => name)
+    miq_task.update(:name => name)
     save!
     my_signal(false, :poll_stack_status, 10)
   rescue StandardError => err
@@ -51,7 +45,7 @@ class ManageIQ::Providers::CloudManager::OrchestrationTemplateRunner < ::Job
 
     orchestration_stack.raw_update_stack(orchestration_template, options[:update_options])
     self.name = "#{name}, update Orchestration Stack ID: #{orchestration_stack.id}"
-    miq_task.update_attributes(:name => name)
+    miq_task.update(:name => name)
     save!
     my_signal(false, :poll_stack_status, 10)
   rescue StandardError => err

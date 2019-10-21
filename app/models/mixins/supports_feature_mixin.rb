@@ -99,6 +99,7 @@ module SupportsFeatureMixin
     :migrate                             => 'Migration',
     :capture                             => 'Capture of Capacity & Utilization Metrics',
     :openscap_scan                       => 'OpenSCAP security scan',
+    :order                               => 'Service Order',
     :provisioning                        => 'Provisioning',
     :publish                             => 'Publishing',
     :quick_stats                         => 'Quick Stats',
@@ -144,7 +145,8 @@ module SupportsFeatureMixin
     :volume_multiattachment              => 'Volume Multiattachment',
     :volume_resizing                     => 'Volume Resizing',
     :change_password                     => 'Change Password',
-    :volume_availability_zones           => 'Volume Availability Zones'
+    :volume_availability_zones           => 'Volume Availability Zones',
+    :assume_role                         => 'Assume Role',
   }.freeze
 
   # Whenever this mixin is included we define all features as unsupported by default.

@@ -327,9 +327,7 @@ class MiqWidget < ApplicationRecord
     settings_for_build[:user_id]  = user.id  if user
     settings_for_build[:timezone] = timezone if timezone
     contents = miq_widget_contents.find_by(settings_for_build) || miq_widget_contents.build(settings_for_build)
-    contents.updated_at = Time.now.utc # Force updated timestamp to change when saved even if the new contents are the same
-
-    contents
+    contents.tap { |c| c.update!(:updated_at => Time.now.utc) }
   end
 
   # TODO: group/user support
@@ -492,6 +490,10 @@ class MiqWidget < ApplicationRecord
     widget
   end
 
+  def filter_for_schedule
+    {"=" => {"field" => "MiqWidget-id", "value" => id}}
+  end
+
   def sync_schedule(schedule_info)
     return if schedule_info.nil?
 
@@ -511,11 +513,12 @@ class MiqWidget < ApplicationRecord
       raise _("Unsupported interval '%{interval}'") % {:interval => interval}
     end
 
-    sched = MiqSchedule.create!(
+    sched = existing_schedule
+    sched ||= MiqSchedule.create!(
       :name          => description,
       :description   => description,
       :sched_action  => {:method => "generate_widget"},
-      :filter        => MiqExpression.new("=" => {"field" => "MiqWidget-id", "value" => id}),
+      :filter        => MiqExpression.new(filter_for_schedule),
       :resource_type => self.class.name,
       :run_at        => {
         :interval   => {:value => value, :unit  => unit},
@@ -530,6 +533,19 @@ class MiqWidget < ApplicationRecord
     _log.debug("Widget: [#{title}] created schedule: [#{sched.inspect}]")
 
     sched
+  end
+
+  def existing_schedule
+    return nil if (sched = MiqSchedule.find_by(:name => description)).nil?
+
+    # return existing sheduler if filter referr to the same widget
+    return sched if sched.filter.exp == filter_for_schedule
+
+    # change name of existed schedule in case it is in use
+    suffix = Time.new.utc.to_s
+    _log.warn("Schedule #{sched.name} already exists, renaming it to `#{sched.name} #{suffix}`")
+    sched.update(:name => "#{sched.name} #{suffix}", :description => "#{sched.description} #{suffix}")
+    nil
   end
 
   def self.seed

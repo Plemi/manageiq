@@ -43,6 +43,7 @@ class Service < ApplicationRecord
   virtual_has_many   :orchestration_stacks
   virtual_has_many   :power_states, :uses => :all_vms
   virtual_has_many   :vms
+  virtual_has_many   :direct_vms
 
   virtual_has_one    :chargeback_report
   virtual_has_one    :configuration_script
@@ -52,7 +53,6 @@ class Service < ApplicationRecord
   virtual_has_one    :reconfigure_dialog
   virtual_has_one    :user
 
-  before_validation :set_tenant_from_group
   before_create :update_attributes_from_dialog
 
   delegate :provision_dialog, :to => :miq_request, :allow_nil => true
@@ -63,6 +63,7 @@ class Service < ApplicationRecord
   include CiFeatureMixin
   include CustomActionsMixin
   include CustomAttributeMixin
+  include DeprecationMixin
   include ExternalUrlMixin
   include LifecycleMixin
   include Metric::CiMixin
@@ -87,15 +88,15 @@ class Service < ApplicationRecord
 
   validates :name, :presence => true
 
-  default_value_for :display, false
+  default_value_for :visible, false
   default_value_for :initiator, 'user'
   default_value_for :lifecycle_state, 'unprovisioned'
   default_value_for :retired, false
 
-  validates :display, :inclusion => { :in => [true, false] }
+  validates :visible, :inclusion => { :in => [true, false] }
   validates :retired, :inclusion => { :in => [true, false] }
 
-  scope :displayed, ->              { where(:display => true) }
+  scope :displayed, ->              { where(:visible => true) }
   scope :retired,   ->(bool = true) { where(:retired => bool) }
 
   supports :reconfigure do
@@ -107,6 +108,7 @@ class Service < ApplicationRecord
   alias parent_service parent
   alias_attribute :service, :parent
   virtual_belongs_to :service
+  deprecate_attribute :display, :visible
 
   def power_states
     vms.map(&:power_state)
@@ -272,11 +274,11 @@ class Service < ApplicationRecord
     expected_status = "#{action}_complete"
     return true if options[:power_status] == expected_status
     options[:power_status] = expected_status
-    update_attributes(:options => options)
+    update(:options => options)
   end
 
   private def update_progress(hash)
-    update_attributes(:options => options.merge(hash))
+    update(:options => options.merge(hash))
   end
 
   def process_group_action(action, group_idx, direction)
@@ -380,10 +382,6 @@ class Service < ApplicationRecord
     MiqEvent.raise_evm_event(self, :service_provisioned)
   end
 
-  def set_tenant_from_group
-    self.tenant_id = miq_group.tenant_id if miq_group
-  end
-
   def tenant_identity
     user = evm_owner
     user = User.super_admin.tap { |u| u.current_group = miq_group } if user.nil? || !user.miq_group_ids.include?(miq_group_id)
@@ -400,8 +398,8 @@ class Service < ApplicationRecord
   end
 
   def self.queue_chargeback_reports(options = {})
-    Service.all.each do |s|
-      s.queue_chargeback_report_generation(options) unless s.vms.empty?
+    Service.in_my_region.each do |s|
+      s.queue_chargeback_report_generation(options) unless s.vms.empty? || s.retired
     end
   end
 
@@ -471,7 +469,7 @@ class Service < ApplicationRecord
 
       # Create ancestry link between services
       resource = service_resource.resource
-      resource.update_attributes(:parent => self) if resource.kind_of?(Service)
+      resource.update(:parent => self) if resource.kind_of?(Service)
     end
   end
 

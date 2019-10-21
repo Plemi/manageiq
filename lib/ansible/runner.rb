@@ -206,7 +206,7 @@ module Ansible
         end
         command_line_hash.merge!(cred_command_line)
 
-        env_vars_hash   = env_vars.merge(cred_env_vars)
+        env_vars_hash   = env_vars.merge(cred_env_vars).merge(python_env)
         extra_vars_hash = extra_vars.merge(cred_extra_vars)
 
         create_hosts_file(base_dir, hosts)
@@ -216,6 +216,7 @@ module Ansible
         params = runner_params(base_dir, ansible_runner_method, playbook_or_role_args, verbosity)
 
         begin
+          fetch_galaxy_roles(playbook_or_role_args)
           result = AwesomeSpawn.run("ansible-runner", :env => env_vars_hash, :params => params)
           res = response(base_dir, ansible_runner_method, result)
         ensure
@@ -254,6 +255,12 @@ module Ansible
         runner_args[:role_skip_facts] = nil if runner_args.delete(:role_skip_facts)
         runner_args[:ident] = "result"
 
+        playbook = runner_args.delete(:playbook)
+        if playbook
+          runner_args[:playbook]    = File.basename(playbook)
+          runner_args[:project_dir] = File.dirname(playbook)
+        end
+
         if verbosity.to_i > 0
           v_flag = "-#{"v" * verbosity.to_i.clamp(1, 5)}"
           runner_args[v_flag] = nil
@@ -284,6 +291,23 @@ module Ansible
         errors << "roles path doesn't exist: #{roles_path}" if roles_path && !File.exist?(roles_path)
 
         raise ArgumentError, errors.join("; ") if errors.any?
+      end
+
+      def fetch_galaxy_roles(playbook_or_role_args)
+        return unless playbook_or_role_args[:playbook]
+
+        playbook_dir = File.dirname(playbook_or_role_args[:playbook])
+        Ansible::Content.new(playbook_dir).fetch_galaxy_roles
+      end
+
+      def python_env
+        if python3_modules_path.present?
+          { "PYTHONPATH" => python3_modules_path }
+        elsif python2_modules_path.present?
+          { "PYTHONPATH" => python2_modules_path }
+        else
+          {}
+        end
       end
 
       def credentials_info(credentials, base_dir)
@@ -329,6 +353,29 @@ module Ansible
 
       def env_dir(base_dir)
         FileUtils.mkdir_p(File.join(base_dir, "env")).first
+      end
+
+      PYTHON2_MODULE_PATHS = %w[
+        /var/lib/manageiq/venv/lib/python2.7/site-packages
+      ].freeze
+      def python2_modules_path
+        @python2_modules_path ||= begin
+          determine_existing_python_paths_for(*PYTHON2_MODULE_PATHS).join(File::PATH_SEPARATOR)
+        end
+      end
+
+      PYTHON3_MODULE_PATHS = %w[
+        /usr/lib64/python3.6/site-packages
+        /var/lib/awx/venv/ansible/lib/python3.6/site-packages
+      ].freeze
+      def python3_modules_path
+        @python3_modules_path ||= begin
+          determine_existing_python_paths_for(*PYTHON3_MODULE_PATHS).join(File::PATH_SEPARATOR)
+        end
+      end
+
+      def determine_existing_python_paths_for(*paths)
+        paths.select { |path| File.exist?(path) }
       end
     end
   end

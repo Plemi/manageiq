@@ -115,6 +115,26 @@ describe MiqLdap do
     end
   end
 
+  context "#using_ldap?" do
+    before do
+      allow(TCPSocket).to receive(:new)
+    end
+
+    it "issues a deprecation warning when using ldap" do
+      allow(Settings).to receive(:authentication).and_return(double(:mode =>'ldap'))
+      expect($audit_log).to receive(:warn).with(/MiqLdap is a deprecated feature/)
+
+      MiqLdap.using_ldap?
+    end
+
+    it "issues no deprecation warning when not using ldap" do
+      allow(Settings).to receive(:authentication).and_return(double(:mode =>'database'))
+      expect($audit_log).to_not receive(:warn).with(/MiqLdap is a deprecated feature/)
+
+      MiqLdap.using_ldap?
+    end
+  end
+
   it "#sid_to_s" do
     data = "\001\005\000\000\000\000\000\005\025\000\000\000+\206\301\364y\307\r\302=\336p\216\237\004\000\000"
     expect(MiqLdap.sid_to_s(data)).to eq("S-1-5-21-4106323499-3255682937-2389761597-1183")
@@ -244,8 +264,8 @@ describe MiqLdap do
     it "searches for username when user_type is mail even when username is UPN" do
       @opts[:user_type] = 'mail'
       ldap = MiqLdap.new(@opts)
-      expect(User).to receive(:find_by_email)
-      expect(User).to receive(:find_by_userid)
+      expect(User).to receive(:lookup_by_email)
+      expect(User).to receive(:lookup_by_userid)
       expect(ldap.fqusername('myuserid@mycompany.com')).to eq('myuserid@mycompany.com')
     end
   end

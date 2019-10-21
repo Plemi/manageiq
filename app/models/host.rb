@@ -24,16 +24,6 @@ class Host < ApplicationRecord
     nil               => "Unknown",
   }.freeze
 
-  HOST_DISCOVERY_TYPES = {
-    'vmware' => 'esx',
-    'ipmi'   => 'ipmi'
-  }.freeze
-
-  HOST_CREATE_OS_TYPES = {
-    'VMware ESX' => 'linux_generic',
-    # 'Microsoft Hyper-V' => 'windows_generic'
-  }.freeze
-
   validates_presence_of     :name
   validates_inclusion_of    :user_assigned_os, :in => ["linux_generic", "windows_generic", nil]
   validates_inclusion_of    :vmm_vendor, :in => VENDOR_TYPES.keys
@@ -477,7 +467,7 @@ class Host < ApplicationRecord
 
   def resolve_hostname!
     addr = MiqSockUtil.resolve_hostname(hostname)
-    update_attributes!(:ipaddress => addr) unless addr.nil?
+    update!(:ipaddress => addr) unless addr.nil?
   end
 
   # Scan for VMs in a path defined in a repository
@@ -1212,7 +1202,7 @@ class Host < ApplicationRecord
           if hardware.nil?
             EmsRefresh.save_hardware_inventory(self, hw_info)
           else
-            hardware.update_attributes(hw_info)
+            hardware.update(hw_info)
           end
         else
           _log.warn("IPMI Login failed due to a bad username or password.")
@@ -1286,6 +1276,8 @@ class Host < ApplicationRecord
     _log.info("Queuing scan of #{log_target}")
 
     task = MiqTask.create(:name => "SmartState Analysis for '#{name}' ", :userid => userid)
+    return unless validate_task(task)
+
     timeout = ::Settings.host_scan.queue_timeout.to_i_with_method
     cb = {:class_name => task.class.name, :instance_id => task.id, :method_name => :queue_callback_on_exceptions, :args => ['Finished']}
     MiqQueue.put(
@@ -1408,6 +1400,14 @@ class Host < ApplicationRecord
 
     task.update_status("Finished", "Ok", "Scanning Complete") if task
     _log.info("Scanning #{log_target}...Complete - Timings: #{t.inspect}")
+  end
+
+  def validate_task(task)
+    if ext_management_system&.zone == Zone.maintenance_zone
+      task.update_status(MiqTask::STATE_FINISHED, MiqTask::STATUS_ERROR, "#{ext_management_system.name} is paused")
+      return false
+    end
+    true
   end
 
   def ssh_run_script(script)
@@ -1701,12 +1701,18 @@ class Host < ApplicationRecord
   # Host Discovery Types and Platforms
 
   def self.host_discovery_types
-    HOST_DISCOVERY_TYPES.values
+    # TODO: This feature has been removed, once the UI no longer calls this
+    # method we can delete it
+    []
   end
+  Vmdb::Deprecation.deprecate_methods(self, :host_discovery_types)
 
   def self.host_create_os_types
-    HOST_CREATE_OS_TYPES
+    # TODO: This feature has been removed, once the UI no longer calls this
+    # method we can delete it
+    []
   end
+  Vmdb::Deprecation.deprecate_methods(self, :host_create_os_types)
 
   def has_compliance_policies?
     _, plist = MiqPolicy.get_policies_for_target(self, "compliance", "host_compliance_check")

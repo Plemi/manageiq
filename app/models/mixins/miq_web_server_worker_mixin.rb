@@ -38,7 +38,7 @@ module MiqWebServerWorkerMixin
     end
 
     def rails_server
-      ::Settings.server.rails_server
+      "puma"
     end
 
     def all_ports_in_use
@@ -146,7 +146,7 @@ module MiqWebServerWorkerMixin
       # TODO: Variablize and clean up this 10-second-max loop of waiting on Worker to gracefully shut down
       10.times do
         unless MiqProcess.alive?(pid)
-          update_attributes(:stopped_on => Time.now.utc, :status => MiqWorker::STATUS_STOPPED)
+          update(:stopped_on => Time.now.utc, :status => MiqWorker::STATUS_STOPPED)
           break
         end
         sleep 1

@@ -57,7 +57,7 @@ class MiqQueueWorkerBase::Runner < MiqWorker::Runner
       next if msg.task_id && MiqQueue.exists?(:state => MiqQueue::STATE_DEQUEUE, :zone => [nil, MiqServer.my_zone], :task_id => msg.task_id)
 
       begin
-        msg.update_attributes!(:state => MiqQueue::STATE_DEQUEUE, :handler => @worker)
+        msg.update!(:state => MiqQueue::STATE_DEQUEUE, :handler => @worker)
         _log.info("#{MiqQueue.format_full_log_msg(msg)}, Dequeued in: [#{Time.now - msg.created_on}] seconds")
         return msg
       rescue ActiveRecord::StaleObjectError
@@ -94,14 +94,14 @@ class MiqQueueWorkerBase::Runner < MiqWorker::Runner
     self.class.delay_queue_delivery_for_vim_broker? && !MiqVimBrokerWorker.available?
   end
 
-  def deliver_queue_message(msg)
+  def deliver_queue_message(msg, &block)
     reset_poll_escalate if poll_method == :sleep_poll_escalate
 
     begin
       $_miq_worker_current_msg = msg
       Thread.current[:tracking_label] = msg.tracking_label || msg.task_id
       heartbeat_message_timeout(msg)
-      status, message, result = msg.deliver
+      status, message, result = msg.deliver(&block)
 
       if status == MiqQueue::STATUS_TIMEOUT
         begin

@@ -141,12 +141,18 @@ namespace :locale do
     system({"RAILS_ENV" => "i18n"}, "bundle exec rake locale:store_model_attributes")
   end
 
+  task "delete_pot_file", :root do |_, args|
+    pot_file = Dir.glob(Pathname(args[:root]).join("locale/*.pot")).first
+    FileUtils.rm_f(pot_file) if pot_file
+  end
+
   desc "Update ManageIQ gettext catalogs"
   task "update" do
     Rake::Task['locale:store_dictionary_strings'].invoke
     Rake::Task['locale:run_store_model_attributes'].invoke
     Rake::Task['locale:extract_yaml_strings'].invoke(Rails.root)
     Rake::Task['locale:model_display_names'].invoke
+    Rake::Task['locale:delete_pot_file'].invoke(Rails.root)
     Rake::Task['gettext:find'].invoke
 
     Dir["config/dictionary_strings.rb", "config/model_attributes.rb", "config/model_display_names.rb", "config/yaml_strings.rb", "locale/**/*.edit.po", "locale/**/*.po.time_stamp"].each do |file|
@@ -160,8 +166,8 @@ namespace :locale do
 
     pot_files = []
     Vmdb::Plugins.each do |plugin|
-      system('rm', '-vf', "#{plugin.root.join('/locale')}/*.pot")
-      system('bundle', 'exec', 'rake', "locale:plugin:find[#{plugin.to_s.sub('::Engine', '')}]")
+      system('bundle', 'exec', 'rake', "locale:delete_pot_file[#{plugin.root}]") # Delete plugin's pot file if it exists to avoid weird file timestamp issues
+      raise unless system('bundle', 'exec', 'rake', "locale:plugin:find[#{plugin.to_s.sub('::Engine', '')}]")
       pot_file = Dir.glob("#{plugin.root.join('locale')}/*.pot")[0]
       pot_files << pot_file if pot_file.present?
     end
@@ -185,6 +191,23 @@ namespace :locale do
     system('rmsgmerge', '--no-fuzzy-matching', '-o', Rails.root.join('locale', 'en', 'manageiq-all.po').to_s, Rails.root.join('locale', 'en', 'manageiq.po').to_s, Rails.root.join('locale', 'manageiq.pot').to_s)
     system('mv', '-v', Rails.root.join('locale', 'en', 'manageiq-all.po').to_s, Rails.root.join('locale', 'en', 'manageiq.po').to_s)
     system('rm', '-rf', tmp_dir)
+  end
+
+  desc "Show changes in gettext strings since last catalog update"
+  task "report_changes", [:verbose] do |_t, args|
+    require 'poparser'
+
+    old_pot = PoParser.parse(File.read(Rails.root.join('locale', 'manageiq.pot'))).to_h.collect { |item| item[:msgid] }.sort
+    Rake::Task['locale:update_all'].invoke
+    new_pot = PoParser.parse(File.read(Rails.root.join('locale', 'manageiq.pot'))).to_h.collect { |item| item[:msgid] }.sort
+    diff = new_pot - old_pot
+    puts "--------------------------------------------------"
+    puts "Current string / word count: %{str} / %{word}" % {:str => old_pot.length, :word => old_pot.join(' ').split.size}
+    puts "Updated string / word count: %{str} / %{word}" % {:str => new_pot.length, :word => new_pot.join(' ').split.size}
+    puts
+    puts "New string / word count: %{str} / %{word}" % {:str => diff.length, :word => diff.join(' ').split.size}
+    puts "--------------------------------------------------"
+    puts "New strings: ", diff if args.verbose == 'verbose'
   end
 
   desc "Extract plugin strings - execute as: rake locale:plugin:find[plugin_name]"
@@ -211,7 +234,7 @@ namespace :locale do
       end
 
       def files_to_translate
-        Dir.glob("#{@engine_root}/{app,db,lib,config,locale}/**/*.{rb,erb,haml,slim,rhtml,js}")
+        Dir.glob("#{@engine_root}/{app,db,lib,config,locale}/**/*.{rb,erb,haml,slim,rhtml,js,jsx}")
       end
 
       def text_domain

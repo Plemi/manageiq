@@ -204,6 +204,27 @@ describe MiqTask do
       expect(message.zone).to eq(zone.name)
       expect(message.miq_task_id).to eq(tid)
     end
+
+    describe "#status_ok?" do
+      it "returns true for STATUS_OK" do
+        miq_task.update_status(MiqTask::STATE_QUEUED, MiqTask::STATUS_OK, "")
+        expect(miq_task.status_ok?).to be_truthy
+      end
+    end
+
+    describe "#status_error?" do
+      it "returns true for STATUS_ERROR" do
+        miq_task.update_status(MiqTask::STATE_FINISHED, MiqTask::STATUS_ERROR, "")
+        expect(miq_task.status_error?).to be_truthy
+      end
+    end
+
+    describe "#status_timeout?" do
+      it "returns true for STATUS_TIMEOUT" do
+        miq_task.update_status(MiqTask::STATE_FINISHED, MiqTask::STATUS_TIMEOUT, "")
+        expect(miq_task.status_timeout?).to be_truthy
+      end
+    end
   end
 
   context "when there are multiple MiqTasks" do
@@ -284,15 +305,15 @@ describe MiqTask do
   context "before_destroy callback" do
     it "destroys miq_task record if there is no job associated with it and Task is not active" do
       miq_task = FactoryBot.create(:miq_task_plain)
-      miq_task.update_attributes!(:state => MiqTask::STATE_QUEUED)
+      miq_task.update!(:state => MiqTask::STATE_QUEUED)
       miq_task.destroy
       expect(MiqTask.count).to eq 0
     end
 
     it "doesn't destroy miq_task and associated job if job is active" do
       expect(MiqTask.count).to eq 0
-      job = Job.create_job("VmScan")
-      job.update_attributes!(:state => "active")
+      job = VmScan.create_job
+      job.update!(:state => "active")
       expect(MiqTask.count).to eq 1
       MiqTask.first.destroy
       expect(MiqTask.count).to eq 1
@@ -303,15 +324,15 @@ describe MiqTask do
       expect(MiqTask.count).to eq 0
       miq_task = FactoryBot.create(:miq_task_plain)
       expect(MiqTask.count).to eq 1
-      miq_task.update_attributes!(:state => MiqTask::STATE_ACTIVE)
+      miq_task.update!(:state => MiqTask::STATE_ACTIVE)
       MiqTask.first.destroy
       expect(MiqTask.count).to eq 1
     end
 
     it "destroys miq_task record and job record if job associated with it 'finished'" do
       expect(MiqTask.count).to eq 0
-      job = Job.create_job("VmScan")
-      job.update_attributes!(:state => "finished")
+      job = VmScan.create_job
+      job.update!(:state => "finished")
       expect(MiqTask.count).to eq 1
       MiqTask.first.destroy
       expect(MiqTask.count).to eq 0
@@ -320,8 +341,8 @@ describe MiqTask do
 
     it "destroys miq_task record and job record if job associated with it not started yet" do
       expect(MiqTask.count).to eq 0
-      job = Job.create_job("VmScan")
-      job.update_attributes!(:state => "waiting_to_start")
+      job = VmScan.create_job
+      job.update!(:state => "waiting_to_start")
       expect(MiqTask.count).to eq 1
       MiqTask.first.destroy
       expect(MiqTask.count).to eq 0
@@ -336,7 +357,7 @@ describe MiqTask do
       it "initilizes 'started_on' attribute if task become Active " do
         expect(task.started_on).to be nil
         Timecop.freeze do
-          task.update_attributes!(:state => MiqTask::STATE_ACTIVE)
+          task.update!(:state => MiqTask::STATE_ACTIVE)
           expect(task.started_on).to eq Time.now.utc
         end
       end
@@ -362,7 +383,7 @@ describe MiqTask do
 
       it "does not changed 'started_on' if task already has 'started-on' attribute set" do
         some_time = Time.now.utc - 5.hours
-        miq_task.update_attributes!(:started_on => some_time)
+        miq_task.update!(:started_on => some_time)
         miq_task.update_status(MiqTask::STATE_ACTIVE, MiqTask::STATUS_OK, "")
         expect(miq_task.started_on).to eq some_time
       end
@@ -388,7 +409,7 @@ describe MiqTask do
 
     it "does not changed 'started_on' if task already has 'started-on' attribute set" do
       some_time = Time.now.utc - 5.hours
-      miq_task.update_attributes!(:started_on => some_time)
+      miq_task.update!(:started_on => some_time)
       miq_task.update_status(MiqTask::STATE_ACTIVE, MiqTask::STATUS_OK, "")
       expect(miq_task.started_on).to eq some_time
     end
@@ -411,11 +432,11 @@ describe MiqTask do
 
       context "task is active" do
         before do
-          miq_task.update_attributes(:state => MiqTask::STATE_ACTIVE)
+          miq_task.update(:state => MiqTask::STATE_ACTIVE)
         end
 
         it "updates status to 'Error' for timed out task" do
-          miq_task.update_attributes(:updated_on => miq_task.updated_on - timeout.to_i_with_method)
+          miq_task.update(:updated_on => miq_task.updated_on - timeout.to_i_with_method)
           expect(miq_task.status).not_to eq MiqTask::STATUS_ERROR
           MiqTask.update_status_for_timed_out_active_tasks
           miq_task.reload
@@ -432,7 +453,7 @@ describe MiqTask do
 
       context "task is not active" do
         it "does not update status to 'Error' if task state is 'Finished'" do
-          miq_task.update_attributes(:state      => MiqTask::STATE_FINISHED,
+          miq_task.update(:state      => MiqTask::STATE_FINISHED,
                                      :updated_on => miq_task.updated_on - timeout.to_i_with_method)
           MiqTask.update_status_for_timed_out_active_tasks
           miq_task.reload
@@ -440,7 +461,7 @@ describe MiqTask do
         end
 
         it "does not update status to 'Error' if task state is 'Queued'" do
-          miq_task.update_attributes(:state      => MiqTask::STATE_QUEUED,
+          miq_task.update(:state      => MiqTask::STATE_QUEUED,
                                      :updated_on => miq_task.updated_on - timeout.to_i_with_method)
           MiqTask.update_status_for_timed_out_active_tasks
           miq_task.reload
@@ -451,12 +472,12 @@ describe MiqTask do
 
     context "task linked to job" do
       let(:miq_task) do
-        job = Job.create_job("VmScan")
+        job = VmScan.create_job
         job.miq_task
       end
 
       it "does not update status to 'Error'" do
-        miq_task.update_attributes(:state      => MiqTask::STATE_ACTIVE,
+        miq_task.update(:state      => MiqTask::STATE_ACTIVE,
                                    :updated_on => miq_task.updated_on - timeout.to_i_with_method)
         MiqTask.update_status_for_timed_out_active_tasks
         miq_task.reload
@@ -511,7 +532,7 @@ describe MiqTask do
 
   def create_test_task(name, status, updated)
     Timecop.travel(updated) do
-      FactoryBot.create(:miq_task_plain).update_attributes(:state  => MiqTask::STATE_FINISHED,
+      FactoryBot.create(:miq_task_plain).update(:state  => MiqTask::STATE_FINISHED,
                                                             :status => status,
                                                             :name   => name)
     end

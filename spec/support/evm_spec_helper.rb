@@ -25,7 +25,7 @@ module EvmSpecHelper
     MiqRegion.seed
     miq_server ||= local_miq_server
     ServerRole.find_by(:name => "embedded_ansible") || FactoryBot.create(:server_role, :name => 'embedded_ansible', :max_concurrent => 0)
-    miq_server.assign_role('embedded_ansible').update_attributes(:active => true)
+    miq_server.assign_role('embedded_ansible').update(:active => true)
   end
 
   # Clear all EVM caches
@@ -61,11 +61,13 @@ module EvmSpecHelper
     instance.instance_variable_set(ivar, nil)
   end
 
+  def self.stub_as_local_server(server)
+    allow(MiqServer).to receive(:my_guid).and_return(server.guid)
+    MiqServer.my_server_clear_cache
+  end
+
   def self.local_miq_server(attrs = {})
-    remote_miq_server(attrs).tap do |server|
-      allow(MiqServer).to receive(:my_guid).and_return(server.guid)
-      MiqServer.my_server_clear_cache
-    end
+    remote_miq_server(attrs).tap { |server| stub_as_local_server(server) }
   end
 
   def self.local_guid_miq_server_zone
@@ -145,7 +147,7 @@ module EvmSpecHelper
   def self.yaml_import(domain, options, attrs = {})
     Tenant.seed
     MiqAeImport.new(domain, options.merge('tenant' => Tenant.root_tenant)).import
-    dom = MiqAeNamespace.find_by_fqname(domain)
-    dom.update_attributes!(attrs.reverse_merge(:enabled => true)) if dom
+    dom = MiqAeNamespace.lookup_by_fqname(domain)
+    dom&.update(attrs.reverse_merge(:enabled => true))
   end
 end

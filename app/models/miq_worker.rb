@@ -360,7 +360,6 @@ class MiqWorker < ApplicationRecord
   def self.containerized_worker?
     # un-rearch containers until further notice
     return false
-    MiqEnvironment::Command.is_podified? && supports_container?
   end
 
   def containerized_worker?
@@ -452,6 +451,11 @@ class MiqWorker < ApplicationRecord
   alias_method :restart, :stop
 
   def kill
+    kill_process
+    destroy
+  end
+
+  def kill_process
     unless pid.nil?
       begin
         _log.info("Killing worker: ID [#{id}], PID [#{pid}], GUID [#{guid}], status [#{status}]")
@@ -466,8 +470,6 @@ class MiqWorker < ApplicationRecord
         _log.warn("Worker ID [#{id}] PID [#{pid}] GUID [#{guid}] has been killed, but with the following error: #{err}")
       end
     end
-
-    destroy
   end
 
   def is_current?
@@ -516,7 +518,7 @@ class MiqWorker < ApplicationRecord
   def log_destroy_of_worker_messages
     ready_messages.each do |m|
       _log.warn("Nullifying: #{MiqQueue.format_full_log_msg(m)}") rescue nil
-      m.update_attributes(:handler_id => nil, :handler_type => nil) rescue nil
+      m.update(:handler_id => nil, :handler_type => nil) rescue nil
     end
 
     processed_messages.each do |m|
@@ -536,7 +538,7 @@ class MiqWorker < ApplicationRecord
       # Ensure the hash only contains the values we want to store in the table
       pinfo.slice!(*PROCESS_INFO_FIELDS)
       pinfo[:os_priority] = pinfo.delete(:priority)
-      update_attributes!(pinfo)
+      update!(pinfo)
     end
   end
 

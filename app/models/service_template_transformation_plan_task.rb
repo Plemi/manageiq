@@ -12,7 +12,7 @@ class ServiceTemplateTransformationPlanTask < ServiceTemplateProvisionTask
   end
 
   def after_request_task_create
-    update_attributes(:description => get_description)
+    update!(:description => get_description)
   end
 
   def resource_action
@@ -31,13 +31,21 @@ class ServiceTemplateTransformationPlanTask < ServiceTemplateProvisionTask
     ServiceTemplate.find_by(:id => vm_resource.options["post_ansible_playbook_service_template_id"])
   end
 
+  def cpu_right_sizing_mode
+    vm_resource.options["cpu_right_sizing_mode"]
+  end
+
+  def memory_right_sizing_mode
+    vm_resource.options["memory_right_sizing_mode"]
+  end
+
   def update_transformation_progress(progress)
     update_options(:progress => (options[:progress] || {}).merge(progress))
   end
 
   def task_finished
     # update the status of vm transformation status in the plan
-    vm_resource.update_attributes(:status => status == 'Ok' ? ServiceResource::STATUS_COMPLETED : ServiceResource::STATUS_FAILED)
+    vm_resource.update!(:status => status == 'Ok' ? ServiceResource::STATUS_COMPLETED : ServiceResource::STATUS_FAILED)
   end
 
   def mark_vm_migrated
@@ -45,7 +53,7 @@ class ServiceTemplateTransformationPlanTask < ServiceTemplateProvisionTask
   end
 
   def task_active
-    vm_resource.update_attributes(:status => ServiceResource::STATUS_ACTIVE)
+    vm_resource.update!(:status => ServiceResource::STATUS_ACTIVE)
   end
 
   # This method returns true if all mappings are ok. It also preload
@@ -56,7 +64,9 @@ class ServiceTemplateTransformationPlanTask < ServiceTemplateProvisionTask
     destination_cluster
     virtv2v_disks
     network_mappings
-    update_attributes(:state => 'migrate')
+    { :status => 'Ok', :message => 'Preflight check is successful' }
+  rescue StandardError => error
+    { :status => 'Error', :message => error.message }
   end
 
   def source_cluster
@@ -159,16 +169,16 @@ class ServiceTemplateTransformationPlanTask < ServiceTemplateProvisionTask
   end
 
   def cancel
-    update_attributes(:cancelation_status => MiqRequestTask::CANCEL_STATUS_REQUESTED)
+    update!(:cancelation_status => MiqRequestTask::CANCEL_STATUS_REQUESTED)
     infra_conversion_job.cancel
   end
 
   def canceling
-    update_attributes(:cancelation_status => MiqRequestTask::CANCEL_STATUS_PROCESSING)
+    update!(:cancelation_status => MiqRequestTask::CANCEL_STATUS_PROCESSING)
   end
 
   def canceled
-    update_attributes(:cancelation_status => MiqRequestTask::CANCEL_STATUS_FINISHED)
+    update!(:cancelation_status => MiqRequestTask::CANCEL_STATUS_FINISHED)
   end
 
   def conversion_options
@@ -191,7 +201,7 @@ class ServiceTemplateTransformationPlanTask < ServiceTemplateProvisionTask
     with_lock do
       # Automate is updating this options hash (various keys) as well, using with_lock.
       options.merge!(opts)
-      update_attributes(:options => options)
+      update!(:options => options)
     end
     options
   end

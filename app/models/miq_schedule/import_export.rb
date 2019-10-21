@@ -4,25 +4,25 @@ module MiqSchedule::ImportExport
   SKIPPED_ATTRIBUTES = %w[id created_on updated_at last_run_on zone_id].freeze
 
   def handle_attributes_for_miq_report(export_attributes)
-    export_attributes['sched_action'][:options][:miq_group_description] = MiqGroup.find(export_attributes['sched_action'][:options][:miq_group_id])&.description
+    export_attributes['sched_action'][:options][:miq_group_description] = MiqGroup.find_by(:id => export_attributes['sched_action'][:options][:miq_group_id])&.description
     export_attributes
   end
 
   def handle_attributes(export_attributes)
     if export_attributes['resource_type'] == 'MiqReport' || export_attributes['resource_type'] == 'MiqWidget'
       filter_record_id = export_attributes['filter'].exp["="]["value"]
-      resource = export_attributes["resource_type"].safe_constantize.find(filter_record_id)
-      export_attributes["filter_resource_name"] = export_attributes["resource_type"] == "MiqReport" ? resource.name : resource.description
+      resource = export_attributes["resource_type"].safe_constantize.find_by(:id => filter_record_id)
+      export_attributes["filter_resource_name"] = export_attributes["resource_type"] == "MiqReport" ? resource.name : resource.description if resource
     elsif export_attributes["filter"]&.kind_of?(MiqExpression)
       export_attributes['filter'] = MiqExpression.new(export_attributes['filter'].exp)
     end
 
-    export_attributes['MiqSearchContent'] = MiqSearch.find(export_attributes['miq_search_id']).export_to_array if export_attributes['miq_search_id']
+    export_attributes['MiqSearchContent'] = MiqSearch.find_by(:id => export_attributes['miq_search_id']).export_to_array if export_attributes['miq_search_id']
 
-    export_attributes['FileDepotContent'] = FileDepot.find(export_attributes['file_depot_id']).export_to_array if export_attributes['file_depot_id']
+    export_attributes['FileDepotContent'] = FileDepot.find_by(:id => export_attributes['file_depot_id']).export_to_array if export_attributes['file_depot_id']
 
     if export_attributes['resource_id']
-      schedule_resource = export_attributes["resource_type"].safe_constantize.find(export_attributes['resource_id'])
+      schedule_resource = export_attributes["resource_type"].safe_constantize.find_by(:id => export_attributes['resource_id'])
       export_attributes['resource_name'] = schedule_resource&.name
     end
 
@@ -57,14 +57,15 @@ module MiqSchedule::ImportExport
       miq_schedule
     end
 
-    def import_from_hash(miq_schedule, _options = nil)
+    def import_from_hash(miq_schedule, options = nil)
       miq_schedule = handle_miq_report_attributes_for_import(miq_schedule) if miq_schedule["resource_type"] == "MiqReport"
 
-      unless miq_schedule['userid'] == 'admin' || miq_schedule['userid'] == 'system'
-        miq_schedule['userid'] = User.find_by(:id => report["userid"])
+      input_userid = options&.dig(:userid) || miq_schedule&.dig('userid')
+      if input_userid && input_userid != 'system'
+        miq_schedule['userid'] = User.find_by(:userid => input_userid)&.userid
+        raise _("User #{input_userid} not found") unless miq_schedule['userid']
       end
 
-      miq_schedule["name"] = miq_schedule["name"] + "EUEUE"
       new_or_existing_schedule = MiqSchedule.where(:name => miq_schedule["name"], :resource_type => miq_schedule["resource_type"]).first_or_initialize
 
       filter_resource_name = miq_schedule.delete("filter_resource_name")
@@ -80,7 +81,7 @@ module MiqSchedule::ImportExport
         filter =
           if miq_schedule["resource_type"] == "MiqReport" || miq_schedule["resource_type"] == "MiqWidget"
             resource = miq_schedule["resource_type"].safe_constantize.find_by(:name => filter_resource_name)
-            raise "Unable to find  #{filter_resource_name}" unless resource
+            raise "Unable to find resource used in filter #{filter_resource_name}. Please add/update :filter_resource_name attribute in yaml of #{miq_schedule["resource_type"]}" unless resource
 
             MiqExpression.new("=" => {"field" => "#{miq_schedule["resource_type"]}-id", "value" => resource.id})
           else

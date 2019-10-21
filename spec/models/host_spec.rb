@@ -189,14 +189,6 @@ describe Host do
     it("nil vendor")   { expect(FactoryBot.build(:host, :vmm_vendor => nil).vmm_vendor_display).to eq("Unknown") }
   end
 
-  it ".host_discovery_types" do
-    expect(Host.host_discovery_types).to match_array ["esx", "ipmi"]
-  end
-
-  it ".host_create_os_types" do
-    expect(Host.host_create_os_types).to eq("VMware ESX" => "linux_generic")
-  end
-
   context "host validation" do
     before do
       EvmSpecHelper.local_miq_server
@@ -651,6 +643,37 @@ describe Host do
       @host.scan
       status, message, _result = MiqQueue.first.deliver
       MiqQueue.first.delivered(status, message, MiqAeEngine::MiqAeWorkspaceRuntime.new)
+    end
+  end
+
+  describe "#scan_queue" do
+    let(:ems) { double("ExtManagementSystem") }
+    before do
+      MiqRegion.seed
+      Zone.seed
+
+      @host = FactoryBot.create(:host_vmware)
+      allow(@host).to receive(:ext_management_system).and_return(ems)
+    end
+
+    it 'creates task with Error status when EMS paused' do
+      allow(ems).to receive_messages(:name => 'My provider',
+                                     :zone => Zone.maintenance_zone)
+      @host.scan_queue
+      task = MiqTask.first
+      expect(task.status_error?).to eq(true)
+      expect(task.message).to eq("#{ems.name} is paused")
+    end
+
+    it 'creates task with valid status EMS active' do
+      allow(ems).to receive_messages(:my_zone => Zone.default_zone,
+                                     :name    => 'My provider',
+                                     :zone    => Zone.default_zone)
+      allow(MiqQueue).to receive(:put).and_return(double)
+
+      @host.scan_queue
+      task = MiqTask.first
+      expect(task.status_ok?).to eq(true)
     end
   end
 

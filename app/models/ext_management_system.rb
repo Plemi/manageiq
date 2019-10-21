@@ -1,6 +1,8 @@
 class ExtManagementSystem < ApplicationRecord
   include CustomActionsMixin
   include SupportsFeatureMixin
+  include ExternalUrlMixin
+  include VerifyCredentialsMixin
 
   def self.with_tenant(tenant_id)
     tenant = Tenant.find(tenant_id)
@@ -45,6 +47,12 @@ class ExtManagementSystem < ApplicationRecord
     !reflections.include?("parent_manager")
   end
 
+  def self.provider_create_params
+    supported_types_for_create.each_with_object({}) do |ems_type, create_params|
+      create_params[ems_type.name] = ems_type.params_for_create if ems_type.respond_to?(:params_for_create)
+    end
+  end
+
   belongs_to :provider
   has_many :child_managers, :class_name => 'ExtManagementSystem', :foreign_key => 'parent_ems_id'
 
@@ -79,6 +87,7 @@ class ExtManagementSystem < ApplicationRecord
   has_many :resource_pools, :foreign_key => "ems_id", :dependent => :destroy, :inverse_of => :ext_management_system
   has_many :customization_specs, :foreign_key => "ems_id", :dependent => :destroy, :inverse_of => :ext_management_system
   has_many :storage_profiles,    :foreign_key => "ems_id", :dependent => :destroy, :inverse_of => :ext_management_system
+  has_many :storage_profile_storages, :through => :storage_profiles
   has_many :customization_scripts, :foreign_key => "manager_id", :dependent => :destroy, :inverse_of => :ext_management_system
 
   has_one  :iso_datastore, :foreign_key => "ems_id", :dependent => :destroy, :inverse_of => :ext_management_system
@@ -115,6 +124,7 @@ class ExtManagementSystem < ApplicationRecord
   serialize :options
 
   supports :refresh_ems
+  supports_not :assume_role
 
   def hostname_uniqueness_valid?
     return unless hostname_required?
@@ -233,6 +243,11 @@ class ExtManagementSystem < ApplicationRecord
   # @param orig_zone [Integer] because of zone of child manager can be changed by parent manager's ensure_managers() callback
   #                            we need to specify original zone for children explicitly
   def pause!(orig_zone = nil)
+    if (orig_zone || zone) == Zone.maintenance_zone
+      _log.warn("Trying to pause paused EMS [#{name}] id [#{id}]. Skipping.")
+      return
+    end
+
     _log.info("Pausing EMS [#{name}] id [#{id}].")
     update!(
       :zone_before_pause => orig_zone || zone,

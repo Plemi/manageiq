@@ -226,8 +226,8 @@ class MiqExpression
     when "contains"
       op_args["tag"] ||= col_name
       operands = if context_type != "hash"
-                   ref, val = value2tag(op_args["tag"], op_args["value"])
-                   ["<exist ref=#{ref}>#{val}</exist>"]
+                   target = parse_field_or_tag(op_args["tag"])
+                   ["<exist ref=#{target.model.to_s.downcase}>#{target.tag_path_with(op_args["value"])}</exist>"]
                  elsif context_type == "hash"
                    # This is only for supporting reporting "display filters"
                    # In the report object the tag value is actually the description and not the raw tag name.
@@ -292,6 +292,7 @@ class MiqExpression
   end
 
   def preprocess_for_sql(exp, attrs = nil)
+    exp.delete(:token)
     attrs ||= {:supported_by_sql => true}
     operator = exp.keys.first
     case operator.downcase
@@ -578,7 +579,7 @@ class MiqExpression
     end
     if val_is_a_tag
       if col
-        classification = options[:classification] || Classification.find_by_name(col) # rubocop:disable Rails/DynamicFindBy
+        classification = options[:classification] || Classification.lookup_by_name(col)
         ret << (classification ? classification.description : col)
       end
     else
@@ -610,8 +611,8 @@ class MiqExpression
           val = ops["field"].split(".").last.split("-").join(".")
           fld = "<value type=#{col_type}>#{val}</value>"
         else
-          ref, val = value2tag(ops["field"])
-          fld = "<value ref=#{ref}, type=#{col_type}>#{val}</value>"
+          target = parse_field_or_tag(ops["field"])
+          fld = "<value ref=#{target.model.to_s.downcase}, type=#{col_type}>#{target.tag_path_with}</value>"
         end
         if ["like", "not like", "starts with", "ends with", "includes", "regular expression matches", "regular expression does not match"].include?(operator)
           [fld, ops["value"]]
@@ -641,9 +642,12 @@ class MiqExpression
 
   def self.quote(val, typ)
     if Field.is_field?(val)
-      ref, value = value2tag(val)
-      col_type = get_col_type(val) || "string"
-      return ref ? "<value ref=#{ref}, type=#{col_type}>#{value}</value>" : "<value type=#{col_type}>#{value}</value>"
+      target = parse_field_or_tag(val)
+      value = target.tag_path_with
+      col_type = target.try(:column_type) || "string"
+
+      reference_attribute = target ? "ref=#{target.model.to_s.downcase}, " : " "
+      return "<value #{reference_attribute}type=#{col_type}>#{value}</value>"
     end
     case typ.to_s
     when "string", "text", "boolean", nil
@@ -729,11 +733,6 @@ class MiqExpression
     else
       [attribute, false]
     end
-  end
-
-  def self.value2tag(tag, val = nil)
-    target = parse_field_or_tag(tag)
-    [target.model.to_s.downcase, target.tag_path_with(val)]
   end
 
   def self.normalize_ruby_operator(str)
@@ -1080,7 +1079,7 @@ class MiqExpression
 
     if ns == "managed"
       cat = field.split("-").last
-      catobj = Classification.find_by_name(cat) # rubocop:disable Rails/DynamicFindBy
+      catobj = Classification.lookup_by_name(cat)
       return catobj ? catobj.entries.collect { |e| [e.description, e.name] } : []
     elsif ns == "user_tag" || ns == "user"
       cat = field.split("-").last

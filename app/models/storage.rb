@@ -396,8 +396,8 @@ class Storage < ApplicationRecord
   # storages to get total_unmanaged_vms in a report or view is optimized
   cache_with_timeout(:total_unmanaged_vms, 15.seconds) do
     StorageFile.where(:ext_name => "vmx", :vm_or_template_id => nil)
-      .group("storage_id").pluck("storage_id, COUNT(*) AS vm_count")
-      .each_with_object(Hash.new(0)) { |(storage_id, count), h| h[storage_id] = count.to_i }
+               .group("storage_id").count
+               .each_with_object(Hash.new(0)) { |(storage_id, count), h| h[storage_id] = count.to_i }
   end
 
   def total_unmanaged_vms
@@ -407,8 +407,8 @@ class Storage < ApplicationRecord
   cache_with_timeout(:count_of_vmdk_disk_files, 15.seconds) do
     # doesnt match *-111111.vmdk, *-flat.vmdk, or *-delta.vmdk
     StorageFile.where(:ext_name => 'vmdk').where("base_name !~ '-([0-9]{6}|flat|delta)\\.vmdk$'")
-      .group("storage_id").pluck("storage_id, COUNT(*) AS vm_count")
-      .each_with_object(Hash.new(0)) { |(storage_id, count), h| h[storage_id] = count.to_i }
+               .group("storage_id").count
+               .each_with_object(Hash.new(0)) { |(storage_id, count), h| h[storage_id] = count.to_i }
   end
 
   def count_of_vmdk_disk_files
@@ -425,7 +425,7 @@ class Storage < ApplicationRecord
 
   cache_with_timeout(:unmanaged_vm_counts_by_storage_id, 15.seconds) do
     Vm.where("((vms.template = ? AND vms.ems_id IS NOT NULL) OR vms.host_id IS NOT NULL)", true)
-      .group("storage_id").pluck("storage_id, COUNT(*) AS vm_count")
+      .group("storage_id").count
       .each_with_object(Hash.new(0)) { |(storage_id, count), h| h[storage_id] = count.to_i }
   end
 
@@ -452,7 +452,7 @@ class Storage < ApplicationRecord
 
   cache_with_timeout(:managed_unregistered_vm_counts_by_storage_id, 15.seconds) do
     Vm.where("((vms.template = ? AND vms.ems_id IS NULL) OR vms.host_id IS NOT NULL)", true)
-      .group("storage_id").pluck("storage_id, COUNT(*) AS vm_count")
+      .group("storage_id").count
       .each_with_object(Hash.new(0)) { |(storage_id, count), h| h[storage_id] = count.to_i }
   end
 
@@ -545,7 +545,7 @@ class Storage < ApplicationRecord
       ems = emss.random_element
     end
 
-    $_miq_worker_current_msg.update_attributes!(:target_id => ems.id) if qmessage?(method_name)
+    $_miq_worker_current_msg.update!(:target_id => ems.id) if qmessage?(method_name)
 
     st = Time.now
     message = "Storage [#{name}] via EMS [#{ems.name}]"
@@ -620,7 +620,7 @@ class Storage < ApplicationRecord
   end
 
   cache_with_timeout(:vm_counts_by_storage_id, 15.seconds) do
-    Vm.group("storage_id").pluck("storage_id, COUNT(*) AS vm_count")
+    Vm.group("storage_id").count
       .each_with_object(Hash.new(0)) { |(storage_id, count), h| h[storage_id] = count.to_i }
   end
 
@@ -807,7 +807,7 @@ class Storage < ApplicationRecord
         perf   = obj_perfs.fetch_path(self.class.name, id, interval_name, hour)
         perf ||= obj_perfs.store_path(self.class.name, id, interval_name, hour, send(meth).build(:timestamp => hour, :capture_interval_name => interval_name))
 
-        perf.update_attributes(attrs)
+        perf.update(attrs)
       end
 
       update_attribute(:last_perf_capture_on, hour)
@@ -826,7 +826,7 @@ class Storage < ApplicationRecord
   def update_vm_perf(vm, vm_perf, vm_attrs)
     vm_attrs.reverse_merge!(vm_perf.attributes.symbolize_keys)
     vm_attrs.merge!(Metric::Processing.process_derived_columns(vm, vm_attrs))
-    vm_perf.update_attributes(vm_attrs)
+    vm_perf.update(vm_attrs)
   end
 
   def vm_scan_affinity

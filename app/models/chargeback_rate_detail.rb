@@ -16,11 +16,11 @@ class ChargebackRateDetail < ApplicationRecord
 
   FORM_ATTRIBUTES = %i(description per_time per_unit metric group source metric chargeable_field_id sub_metric).freeze
   PER_TIME_TYPES = {
-    "hourly"  => _("Hourly"),
-    "daily"   => _("Daily"),
-    "weekly"  => _("Weekly"),
-    "monthly" => _("Monthly"),
-    'yearly'  => _('Yearly')
+    "hourly"  => N_("Hourly"),
+    "daily"   => N_("Daily"),
+    "weekly"  => N_("Weekly"),
+    "monthly" => N_("Monthly"),
+    'yearly'  => N_('Yearly')
   }.freeze
 
   # gigabytes -> GiB
@@ -191,7 +191,7 @@ class ChargebackRateDetail < ApplicationRecord
   # New method created in order to show the rates in a easier to understand way
   def show_rates
     hr = ChargebackRateDetail::PER_TIME_MAP[per_time.to_sym]
-    rate_display = "#{detail_currency.code} / #{hr}"
+    rate_display = "#{detail_currency.symbol} [#{detail_currency.full_name}] / #{hr}"
     rate_display_unit = "#{rate_display} / #{per_unit_display}"
     per_unit.nil? ? rate_display : rate_display_unit
   end

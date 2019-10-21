@@ -750,6 +750,7 @@ en:
       LdapRegion:               LDAP Region
       LdapServer:               LDAP Server
       LoadBalancer:             Load Balancer
+      ManageIQ::Providers::AutomationManager:                                        Automation Manager
       ManageIQ::Providers::BaseManager:                                     Provider
       ManageIQ::Providers::EmbeddedAutomationManager::Authentication:                Credential
       ManageIQ::Providers::EmbeddedAutomationManager::ConfigurationScriptSource:     Repository
@@ -845,7 +846,8 @@ en:
       ManageIQ::Providers::Openstack::NetworkManager::SecurityGroup:        Security Group (OpenStack)
       ManageIQ::Providers::Azure::NetworkManager::LoadBalancer:             LoadBalancer (Microsoft Azure)
       ManageIQ::Providers::Azure::NetworkManager::CloudSubnet:              Cloud Subnet (Microsoft Azure)
-      ManageIQ::Providers::Azure::CloudManager::SecurityGroup:              Security Group (Microsoft Azure)
+      ManageIQ::Providers::Azure::NetworkManager::SecurityGroup:            Security Group (Microsoft Azure)
+      ManageIQ::Providers::Azure::NetworkManager::NetworkRouter:            Network Router (Microsoft Azure)
       ManageIQ::Providers::Openstack::NetworkManager::FloatingIp:           Floating IP (OpenStack)
       ManageIQ::Providers::Amazon::NetworkManager::FloatingIp:              Floating IP (Amazon)
       ManageIQ::Providers::Azure::NetworkManager::FloatingIp:               Floating IP (Microsoft Azure)

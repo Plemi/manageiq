@@ -30,6 +30,7 @@ class MiqScheduleWorker::Jobs
 
   def retirement_check
     queue_work_on_each_zone(:class_name => 'RetirementManager', :method_name => 'check')
+    queue_work(:class_name => 'RetirementManager', :method_name => 'check_per_region', :zone => nil)
   end
 
   def host_authentication_check_schedule
@@ -105,6 +106,10 @@ class MiqScheduleWorker::Jobs
 
   def policy_event_purge_timer
     queue_work(:class_name => "PolicyEvent", :method_name => "purge_timer", :zone => nil)
+  end
+
+  def compliance_purge_timer
+    queue_work(:class_name => "Compliance", :method_name => "purge_timer", :zone => nil)
   end
 
   def miq_report_result_purge_timer

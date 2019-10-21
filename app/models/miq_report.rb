@@ -283,28 +283,32 @@ class MiqReport < ApplicationRecord
     @col_format_hash ||= col_order.zip(col_formats).to_h
   end
 
-  def format_row(row, allowed_columns = nil)
-    @tz ||= get_time_zone(Time.zone)
-
+  def format_row(row, allowed_columns = nil, expand_value_format = nil)
+    tz = get_time_zone(User.current_user.settings.fetch_path(:display, :timezone).presence || Time.zone)
     row.map do |key, _|
-      [key, allowed_columns.nil? || allowed_columns&.include?(key) ? format_column(key, row, @tz, col_format_hash[key]) : row[key]]
+      value = allowed_columns.nil? || allowed_columns&.include?(key) ? format_column(key, row, tz, col_format_hash[key]) : row[key]
+      [key, expand_value_format.present? ? { :value => value, :style_class => get_style_class(key, row, tz) } : value]
     end.to_h
   end
 
-  def format_result_set(result_set, skip_columns = nil)
-    result_set.map { |row| format_row(row, skip_columns) }
+  def format_result_set(result_set, skip_columns = nil, hash_value_format = nil)
+    result_set.map { |row| format_row(row, skip_columns, hash_value_format) }
   end
 
-  def filter_result_set(result_set, options)
-    filter_columns = validate_columns(options[:filter_column])
-    formatted_result_set = format_result_set(result_set, filter_columns)
-    result_set_filtered = formatted_result_set.select { |x| x[options[:filter_column]].include?(options[:filter_string]) }
+  def filter_result_set_record(record, filter_options)
+    filter_options.all? { |column, search_string| record[column].include?(search_string) }
+  end
+
+  def filter_result_set(result_set, filter_options)
+    validated_filter_columns = validate_columns(filter_options.keys)
+    formatted_result_set = format_result_set(result_set, validated_filter_columns)
+    result_set_filtered = formatted_result_set.select { |record| filter_result_set_record(record, filter_options) }
 
     [result_set_filtered, result_set_filtered.count]
   end
 
   def self.default_use_sql_view
-    false
+    ::Settings.reporting.use_sql_view
   end
 
   private

@@ -46,7 +46,7 @@ describe RegistrationSystem do
       MiqDatabase.seed
       MiqDatabase.first.update_authentication(:registration => creds)
       MiqDatabase.first.update_authentication(:registration_http_proxy => proxy_creds)
-      MiqDatabase.first.update_attributes(
+      MiqDatabase.first.update(
         :registration_server            => "http://abc.net",
         :registration_http_proxy_server => "1.1.1.1"
       )
@@ -91,7 +91,7 @@ describe RegistrationSystem do
     end
 
     it "should rescue NotImplementedError" do
-      allow_any_instance_of(LinuxAdmin::Rhn).to receive_messages(:registered? => true)
+      allow(LinuxAdmin::RegistrationSystem).to receive(:registration_type_uncached).and_return(LinuxAdmin::RegistrationSystem)
       expect(RegistrationSystem.verify_credentials(creds)).to be_falsey
     end
 
@@ -99,7 +99,7 @@ describe RegistrationSystem do
       MiqDatabase.seed
       MiqDatabase.first.update_authentication(:registration => creds)
       MiqDatabase.first.update_authentication(:registration_http_proxy => proxy_creds)
-      MiqDatabase.first.update_attributes(
+      MiqDatabase.first.update(
         :registration_server            => "http://abc.net",
         :registration_http_proxy_server => "1.1.1.1"
       )
@@ -233,7 +233,7 @@ describe RegistrationSystem do
 
     it "with no options will use database valuses" do
       MiqDatabase.seed
-      MiqDatabase.first.update_attributes(
+      MiqDatabase.first.update(
         :registration_http_proxy_server => "192.0.2.0:0"
       )
       RegistrationSystem.update_rhsm_conf

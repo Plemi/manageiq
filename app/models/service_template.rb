@@ -1,4 +1,6 @@
 class ServiceTemplate < ApplicationRecord
+  include SupportsFeatureMixin
+
   DEFAULT_PROCESS_DELAY_BETWEEN_GROUPS = 120
 
   GENERIC_ITEM_SUBTYPES = {
@@ -84,13 +86,21 @@ class ServiceTemplate < ApplicationRecord
   scope :displayed,                                 ->         { where(:display => true) }
   scope :public_service_templates,                  ->         { where(:internal => [false, nil]) }
 
+  supports :order do
+    unsupported_reason_add(:order, 'Service template does not belong to a service catalog') unless service_template_catalog
+    unsupported_reason_add(:order, 'Service template is not configured to be displayed') unless display
+  end
+  alias orderable?     supports_order?
+  alias validate_order supports_order?
+
+
   def self.with_tenant(tenant_id)
     tenant = Tenant.find(tenant_id)
     where(:tenant_id => tenant.ancestor_ids + [tenant_id])
   end
 
   def self.with_additional_tenants
-    includes(:service_template_tenants => :tenant)
+    references(table_name, :tenants).includes(:service_template_tenants => :tenant)
   end
 
   def self.catalog_item_types
@@ -130,7 +140,7 @@ class ServiceTemplate < ApplicationRecord
   def update_catalog_item(options, auth_user = nil)
     config_info = validate_update_config_info(options)
     unless config_info
-      update_attributes!(options)
+      update!(options)
       return reload
     end
     transaction do
@@ -195,14 +205,18 @@ class ServiceTemplate < ApplicationRecord
 
   def create_service(service_task, parent_svc = nil)
     nh = attributes.dup
+
+    # Service#display was renamed to #visible in https://github.com/ManageIQ/manageiq-schema/pull/410
+    nh['visible'] = nh.delete('display') if nh.key?('display')
+
     nh['options'][:dialog] = service_task.options[:dialog]
     (nh.keys - Service.column_names + %w(created_at guid service_template_id updated_at id type prov_type)).each { |key| nh.delete(key) }
 
     # Hide child services by default
-    nh['display'] = false if parent_svc
+    nh['visible'] = false if parent_svc
 
-    # If display is nil, set it to false
-    nh['display'] ||= false
+    # If visible is nil, set it to false
+    nh['visible'] ||= false
 
     # convert template class name to service class name by naming convention
     nh['type'] = self.class.name.sub('Template', '')
@@ -348,11 +362,6 @@ class ServiceTemplate < ApplicationRecord
     end.try(:resource).try(:validate_template) || {:valid => true, :message => nil}
   end
 
-  def validate_order
-    service_template_catalog && display
-  end
-  alias orderable? validate_order
-
   def provision_action
     resource_actions.find_by(:action => "Provision")
   end
@@ -365,7 +374,7 @@ class ServiceTemplate < ApplicationRecord
       if resource_params
         # And the resource action exists on the template already, update it
         if resource_action
-          resource_action.update_attributes!(resource_params.slice(*RESOURCE_ACTION_UPDATE_ATTRS))
+          resource_action.update!(resource_params.slice(*RESOURCE_ACTION_UPDATE_ATTRS))
         # If the resource action does not exist, create it
         else
           build_resource_action(resource_params, action)
@@ -424,7 +433,8 @@ class ServiceTemplate < ApplicationRecord
       time = Time.parse(schedule_time).utc
 
       errors = workflow.validate_dialog
-      return {:errors => errors} unless errors.blank?
+      errors << unsupported_reason(:order)
+      return {:errors => errors} if errors.compact.present?
 
       schedule = MiqSchedule.create!(
         :name         => "Order #{self.class.name} #{id} at #{time}",
@@ -520,7 +530,7 @@ class ServiceTemplate < ApplicationRecord
 
   def update_from_options(params)
     options[:config_info] = params[:config_info]
-    update_attributes!(params.except(:config_info))
+    update!(params.except(:config_info))
   end
 
   def construct_config_info

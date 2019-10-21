@@ -19,6 +19,12 @@ describe Authenticator::Database do
     end
   end
 
+  describe '#lookup_by_principalname' do
+    it "finds existing users" do
+      expect(subject.lookup_by_principalname('alice').first).to eq(alice)
+    end
+  end
+
   describe '#authenticate' do
     def authenticate
       subject.authenticate(username, password)
@@ -48,7 +54,7 @@ describe Authenticator::Database do
       end
 
       it "updates lastlogon" do
-        expect(-> { authenticate }).to change { alice.reload.lastlogon }
+        expect { authenticate }.to(change { alice.reload.lastlogon })
       end
     end
 
@@ -60,7 +66,7 @@ describe Authenticator::Database do
       end
 
       it "fails" do
-        expect(-> { authenticate }).to raise_error(MiqException::MiqEVMLoginError, "Authentication failed")
+        expect { authenticate }.to raise_error(MiqException::MiqEVMLoginError, "Authentication failed")
       end
 
       it "records one failing audit entry" do
@@ -80,7 +86,7 @@ describe Authenticator::Database do
       end
 
       it "doesn't change lastlogon" do
-        expect(-> { authenticate rescue nil }).not_to change { alice.reload.lastlogon }
+        expect { authenticate rescue nil }.not_to(change { alice.reload.lastlogon })
       end
     end
 
@@ -92,7 +98,7 @@ describe Authenticator::Database do
       end
 
       it "fails" do
-        expect(-> { authenticate }).to raise_error(MiqException::MiqEVMLoginError)
+        expect { authenticate }.to raise_error(MiqException::MiqEVMLoginError)
       end
 
       it "records one failing audit entry" do
@@ -134,7 +140,7 @@ describe Authenticator::Database do
         authenticate
       end
       it "updates lastlogon" do
-        expect(-> { authenticate }).to change { vincent.reload.lastlogon }
+        expect { authenticate }.to(change { vincent.reload.lastlogon })
       end
     end
   end

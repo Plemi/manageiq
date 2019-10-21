@@ -296,8 +296,8 @@ class MiqLdap
       return "#{username}@#{@user_suffix}"
     when "mail"
       username = "#{username}@#{@user_suffix}" unless @user_suffix.blank? || upn?(username)
-      dbuser = User.find_by_email(username.downcase)
-      dbuser ||= User.find_by_userid(username.downcase)
+      dbuser = User.lookup_by_email(username.downcase)
+      dbuser ||= User.lookup_by_userid(username.downcase)
       return dbuser.userid if dbuser && dbuser.userid
 
       return username
@@ -445,7 +445,9 @@ class MiqLdap
   end
 
   def self.using_ldap?
-    ::Settings.authentication.mode.include?('ldap')
+    ::Settings.authentication.mode.include?('ldap').tap do |should_warn|
+      $audit_log.warn("MiqLdap is a deprecated feature. Please convert to using external authentication.") if should_warn
+    end
   end
 
   def self.sid_to_s(data)
