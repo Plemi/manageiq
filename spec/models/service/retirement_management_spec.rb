@@ -2,6 +2,8 @@ describe "Service Retirement Management" do
   let!(:user) { FactoryGirl.create(:user_miq_request_approver, :userid => 'admin') }
   let(:service_without_owner) { FactoryGirl.create(:service) }
   let(:service3) { FactoryGirl.create(:service) }
+  let(:service_ansible_playbook) { FactoryBot.create(:service_ansible_playbook) }
+
   before do
     @server = EvmSpecHelper.local_miq_server
     @service = FactoryGirl.create(:service, :evm_owner_id => user.id)
@@ -117,6 +119,12 @@ describe "Service Retirement Management" do
     expect(@service.retirement_warn).to eq(options[:warn])
   end
 
+  it "with a Service Ansible Playbook" do
+    expect(ServiceRetireRequest).to receive(:make_request)
+      .with(nil, {:src_ids => [service_ansible_playbook.id], :__request_type__ => "service_retire"}, user)
+    service_ansible_playbook.class.make_retire_request(service_ansible_playbook.id, user)
+  end
+
   it "with one src_id" do
     expect(ServiceRetireRequest).to receive(:make_request).with(nil, {:src_ids => [service3.id], :__request_type__ => "service_retire"}, user)
     @service.class.to_s.demodulize.constantize.make_retire_request(service3.id, user)
@@ -228,11 +236,38 @@ describe "Service Retirement Management" do
     expect(@service.retirement_due?).to be_truthy
   end
 
-  it "#raise_retirement_event" do
-    event_name = 'foo'
-    event_hash = {:userid => nil, :service => @service, :type => "Service"}
-    expect(MiqEvent).to receive(:raise_evm_event).with(@service, event_name, event_hash, {})
-    @service.raise_retirement_event(event_name)
+  describe "#raise_retirement_event " do
+    before do
+      User.super_admin || FactoryBot.create(:user, :userid => 'admin', :role => 'super_administrator')
+    end
+
+    it "without user" do
+      event_name = 'foo'
+      event_hash = {:userid => nil, :service => @service, :type => "Service"}
+      expect(MiqEvent).to receive(:raise_evm_event).with(@service, event_name, event_hash, {})
+      @service.raise_retirement_event(event_name)
+    end
+
+    it "with string user" do
+      event_name = 'foo'
+      event_hash = {:userid => "admin", :service => @service, :type => "Service"}
+      expect(MiqEvent).to receive(:raise_evm_event).with(@service, event_name, event_hash, :user_id => User.find_by(:userid => "admin").id, :group_id => User.find_by(:userid => "admin").current_group.id, :tenant_id => User.find_by(:userid => "admin").current_tenant.id)
+      @service.raise_retirement_event(event_name, "admin")
+    end
+
+    it "with user object" do
+      event_name = 'foo'
+      event_hash = {:userid => user, :service => @service, :type => "Service"}
+      expect(MiqEvent).to receive(:raise_evm_event).with(@service, event_name, event_hash, :user_id => user.id, :group_id => user.current_group.id, :tenant_id => user.current_tenant.id)
+      @service.raise_retirement_event(event_name, user)
+    end
+
+    it "with string user that isn't found" do
+      event_name = 'foo'
+      event_hash = {:userid => "nonexistent_username", :service => @service, :type => "Service"}
+      expect(MiqEvent).to receive(:raise_evm_event).with(@service, event_name, event_hash, {})
+      @service.raise_retirement_event(event_name, "nonexistent_username")
+    end
   end
 
   it "#raise_audit_event" do

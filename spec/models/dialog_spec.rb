@@ -106,17 +106,28 @@ describe Dialog do
   end
 
   context "#destroy" do
+    let(:dialog) { FactoryBot.create(:dialog) }
+
     it "destroy without resource_action association" do
-      expect(FactoryGirl.create(:dialog).destroy).to be_truthy
+      expect(dialog.destroy).to be_truthy
       expect(Dialog.count).to eq(0)
     end
 
     it "destroy with resource_action association" do
-      dialog = FactoryGirl.create(:dialog)
       FactoryGirl.create(:resource_action, :action => "Provision", :dialog => dialog, :resource_type => Dialog, :resource_id => dialog.id)
       expect { dialog.destroy }
       .to raise_error(RuntimeError, "Dialog cannot be deleted because it is connected to other components: [\"Dialog:#{dialog.id} - #{dialog.name}\"]")
       expect(Dialog.count).to eq(1)
+    end
+
+    it "does destroy dialog with only obsolete resource_action association" do
+      custom_button = FactoryBot.create(:custom_button, :applies_to_class => 'Vm')
+      FactoryBot.create(:resource_action, :action => nil, :dialog => dialog, :resource_type => 'CustomButton', :resource_id => custom_button.id)
+
+      custom_button.delete  # deliberately not destroy, otherwise the ResourceAction gets removed too
+
+      expect(dialog.destroy).to be_truthy
+      expect(Dialog.count).to eq(0)
     end
   end
 

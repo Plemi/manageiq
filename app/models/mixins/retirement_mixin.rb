@@ -11,7 +11,7 @@ module RetirementMixin
 
   module ClassMethods
     def make_retire_request(*src_ids, requester)
-      klass = (name.demodulize + "RetireRequest").constantize
+      klass = (base_class.name.demodulize + "RetireRequest").constantize
       options = {:src_ids => src_ids.presence, :__request_type__ => klass.request_types.first}
       set_retirement_requester(options[:src_ids], requester)
       klass.make_request(nil, options, requester)
@@ -273,10 +273,10 @@ module RetirementMixin
   end
 
   def q_user_info(q_options, requester)
-    if requester.present?
-      if requester.kind_of?(String)
-        requester = User.find_by(:userid => requester)
-      end
+    if requester && requester.kind_of?(String)
+      requester = User.find_by(:userid => requester)
+    end
+    if requester
       q_options[:user_id] = requester.id
       if requester.current_group.present? && requester.current_tenant.present?
         q_options[:group_id] = requester.current_group.id
