@@ -104,19 +104,18 @@ module ManageIQ::Providers
           add_common_default_values
         end
 
-        def ems_clusters
-          add_properties(:attributes_blacklist => %i[datacenter_id parent])
+        def clusters
+          add_properties(
+            :assocation           => :ems_clusters,
+            :attributes_blacklist => %i[datacenter_id parent]
+          )
           add_inventory_attributes(%i[datacenter_id])
           add_common_default_values
         end
 
         def storages
-          add_properties(
-            :manager_ref          => %i[location],
-            :complete             => false,
-            :arel                 => Storage,
-            :attributes_blacklist => %i[parent],
-          )
+          add_properties(:attributes_blacklist => %i[parent])
+          add_common_default_values
         end
 
         def hosts
@@ -277,7 +276,7 @@ module ManageIQ::Providers
             :custom_save_block => relationship_save_block(:relationship_key => :parent)
           )
 
-          dependency_collections = %i[ems_clusters ems_folders datacenters hosts resource_pools storages]
+          dependency_collections = %i[clusters ems_folders datacenters hosts resource_pools storages]
           dependency_attributes = dependency_collections.each_with_object({}) do |collection, hash|
             hash[collection] = ->(persister) { [persister.collections[collection]].compact }
           end

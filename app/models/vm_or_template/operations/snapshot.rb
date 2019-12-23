@@ -4,9 +4,6 @@ module VmOrTemplate::Operations::Snapshot
   included do
     supports :snapshot_create do
       if supports_snapshots?
-        if !snapshots.blank? && snapshots.first.get_current_snapshot.nil?
-          unsupported_reason_add(:snapshot_create, _("At least one snapshot has to be active to create a new snapshot for this VM"))
-        end
         unless supports_control?
           unsupported_reason_add(:snapshot_create, unsupported_reason(:control))
         end
@@ -48,32 +45,19 @@ module VmOrTemplate::Operations::Snapshot
   end
 
   def raw_create_snapshot(name, desc = nil, memory)
-    run_command_via_parent(:vm_create_snapshot, :name => name, :desc => desc, :memory => memory)
-  rescue => err
-    create_notification(:vm_snapshot_failure, :error => err.to_s, :snapshot_op => "create")
-    raise MiqException::MiqVmSnapshotError, err.to_s
+    raise NotImplementedError, _("must be implemented in a subclass")
+  end
+
+  def create_snapshot_queue(name, desc = nil, memory)
+    run_command_via_queue("raw_create_snapshot", :args => [name, desc, memory])
   end
 
   def create_snapshot(name, desc = nil, memory = false)
-    check_policy_prevent(:request_vm_create_snapshot, :raw_create_snapshot, name, desc, memory)
+    check_policy_prevent(:request_vm_create_snapshot, :create_snapshot_queue, name, desc, memory)
   end
 
   def raw_remove_snapshot(snapshot_id)
-    raise MiqException::MiqVmError, unsupported_reason(:remove_snapshot) unless supports_remove_snapshot?
-    snapshot = snapshots.find_by(:id => snapshot_id)
-    raise _("Requested VM snapshot not found, unable to remove snapshot") unless snapshot
-    begin
-      _log.info("removing snapshot ID: [#{snapshot.id}] uid_ems: [#{snapshot.uid_ems}] ems_ref: [#{snapshot.ems_ref}] name: [#{snapshot.name}] description [#{snapshot.description}]")
-
-      run_command_via_parent(:vm_remove_snapshot, :snMor => snapshot.uid_ems)
-    rescue => err
-      create_notification(:vm_snapshot_failure, :error => err.to_s, :snapshot_op => "remove")
-      if err.to_s.include?('not found')
-        raise MiqException::MiqVmSnapshotError, err.to_s
-      else
-        raise
-      end
-    end
+    raise NotImplementedError, _("must be implemented in a subclass")
   end
 
   #
@@ -93,33 +77,42 @@ module VmOrTemplate::Operations::Snapshot
     raw_remove_snapshot(snapshot_id)
   end
 
+  # Remove a snapshot as a queued operation and return the queue object. The
+  # queue name and the queue zone are derived from the EMS. The snapshot id
+  # is mandatory, while a task id is optional.
+  #
   def remove_snapshot_queue(snapshot_id, task_id = nil)
     MiqQueue.put_unless_exists(
       :class_name  => self.class.name,
       :instance_id => id,
       :method_name => 'remove_snapshot',
       :args        => [snapshot_id],
-      :role        => "ems_operations",
+      :role        => 'ems_operations',
+      :queue_name  => queue_name_for_ems_operations,
       :zone        => my_zone,
       :task_id     => task_id
     )
   end
 
+  # Remove a evm snapshot as a queued operation and return the queue object. The
+  # queue name and the queue zone are derived from the EMS. The snapshot id
+  # is mandatory, while a task id is optional.
+  #
   def remove_evm_snapshot_queue(snapshot_id, task_id = nil)
     MiqQueue.put_unless_exists(
       :class_name  => self.class.name,
       :instance_id => id,
       :method_name => 'remove_evm_snapshot',
       :args        => [snapshot_id],
-      :role        => "ems_operations",
+      :role        => 'ems_operations',
+      :queue_name  => queue_name_for_ems_operations,
       :zone        => my_zone,
       :task_id     => task_id
     )
   end
 
   def raw_remove_snapshot_by_description(description, refresh = false)
-    raise MiqException::MiqVmError, unsupported_reason(:remove_snapshot_by_description) unless supports_remove_snapshot_by_description?
-    run_command_via_parent(:vm_remove_snapshot_by_description, :description => description, :refresh => refresh)
+    raise NotImplementedError, _("must be implemented in a subclass")
   end
 
   def remove_snapshot_by_description(description, refresh = false, retry_time = nil)
@@ -142,14 +135,16 @@ module VmOrTemplate::Operations::Snapshot
   end
 
   def raw_remove_all_snapshots
-    raise MiqException::MiqVmError, unsupported_reason(:remove_all_snapshots) unless supports_remove_all_snapshots?
-    run_command_via_parent(:vm_remove_all_snapshots)
+    raise NotImplementedError, _("must be implemented in a subclass")
   end
 
   def remove_all_snapshots
     raw_remove_all_snapshots
   end
 
+  # Remove all snapshots as a queued task and return the task id. The queue
+  # name and the queue zone are derived from the EMS. The userid is mandatory.
+  #
   def remove_all_snapshots_queue(userid)
     task_opts = {
       :name   => "Removing all snapshots for #{name}",
@@ -162,6 +157,7 @@ module VmOrTemplate::Operations::Snapshot
       :instance_id => id,
       :role        => 'ems_operations',
       :zone        => ext_management_system.my_zone,
+      :queue_name  => ext_management_system.queue_name_for_ems_operations,
       :args        => []
     }
 
@@ -169,10 +165,7 @@ module VmOrTemplate::Operations::Snapshot
   end
 
   def raw_revert_to_snapshot(snapshot_id)
-    raise MiqException::MiqVmError, unsupported_reason(:revert_to_snapshot) unless supports_revert_to_snapshot?
-    snapshot = snapshots.find_by(:id => snapshot_id)
-    raise _("Requested VM snapshot not found, unable to RevertTo snapshot") unless snapshot
-    run_command_via_parent(:vm_revert_to_snapshot, :snMor => snapshot.uid_ems)
+    raise NotImplementedError, _("must be implemented in a subclass")
   end
 
   def revert_to_snapshot(snapshot_id)

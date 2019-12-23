@@ -176,9 +176,9 @@ class MiqQueue < ApplicationRecord
   #
   # target_worker:
   #
-  # @options options [String] :class
-  # @options options [String] :instance
-  # @options options [String] :method
+  # @options options [String] :class_name
+  # @options options [String] :instance_id
+  # @options options [String] :method_name
   # @options options [String] :args
   # @options options [String] :target_id (deprecated)
   # @options options [String] :data (deprecated)
@@ -207,12 +207,10 @@ class MiqQueue < ApplicationRecord
       options[:queue_name] = MiqEmsRefreshWorker.queue_name_for_ems(resource)
       options[:role]       = service
       options[:zone]       = resource.my_zone
-    when "ems_operations", "smartstate"
-      # ems_operations, refresh is class method
-      # some smartstate just want MiqServer.my_zone and pass in no resource
-      # options[:queue_name] = "generic"
+    when "ems_operations"
       options[:role] = service
       options[:zone] = resource.try(:my_zone) || MiqServer.my_zone
+      options[:queue_name] = resource.try(:queue_name_for_ems_operations) || "generic"
     when "event"
       options[:queue_name] = "ems"
       options[:role] = service
@@ -227,6 +225,9 @@ class MiqQueue < ApplicationRecord
     when "smartproxy"
       options[:queue_name] = "smartproxy"
       options[:role] = "smartproxy"
+    when "smartstate"
+      options[:role] = service
+      options[:zone] = resource.try(:my_zone) || MiqServer.my_zone
     end
 
     # Note, options[:zone] is set in 'put' via 'determine_queue_zone' and handles setting
@@ -543,6 +544,14 @@ class MiqQueue < ApplicationRecord
       $log.warn("#{log_prefix} Timed Out Active #{MiqQueue.format_short_log_msg(self)}#{msg} after #{Time.now.utc - updated_on} seconds")
       destroy rescue nil
     end
+  end
+
+  def self.candidates_for_timeout
+    where(:state => STATE_DEQUEUE).where("(select date_part('epoch', updated_on) + msg_timeout) < ?", Time.now.to_i)
+  end
+
+  def self.check_for_timeout
+    candidates_for_timeout.each(&:check_for_timeout)
   end
 
   def finished?

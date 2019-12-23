@@ -8,6 +8,22 @@ module Metric::Targets
     MiqRegion.my_region.perf_capture_always = options
   end
 
+  def self.targets_archived_from
+    archived_for_setting = Settings.performance.targets.archived_for
+    archived_for_setting.to_i_with_method.seconds.ago.utc
+  end
+
+  def self.capture_ems_targets(ems, options = {})
+    case ems
+    when EmsCloud                                then capture_cloud_targets([ems], options)
+    when EmsInfra                                then capture_infra_targets([ems], options)
+    when ::ManageIQ::Providers::ContainerManager then capture_container_targets([ems], options)
+    end
+  end
+
+  # If a Cluster, standalone Host, or Storage is not enabled, skip it.
+  # If a Cluster is enabled, capture all of its Hosts.
+  # If a Host is enabled, capture all of its Vms.
   def self.capture_infra_targets(emses, options)
     load_infra_targets_data(emses, options)
     all_hosts = capture_host_targets(emses)
@@ -41,7 +57,7 @@ module Metric::Targets
 
   def self.with_archived(scope)
     # We will look also for freshly archived entities, if the entity was short-lived or even sub-hour
-    archived_from = Metric::Capture.targets_archived_from
+    archived_from = targets_archived_from
     scope.where(:deleted_on => nil).or(scope.where(:deleted_on => (archived_from..Time.now.utc)))
   end
 
@@ -133,16 +149,5 @@ module Metric::Targets
   def self.capture_vm_targets(emses, hosts)
     enabled_host_ids = hosts.select(&:perf_capture_enabled?).index_by(&:id)
     emses.flat_map { |e| e.vms.select { |v| enabled_host_ids.key?(v.host_id) && v.state == 'on' && v.supports_capture? } }
-  end
-
-  # If a Cluster, standalone Host, or Storage is not enabled, skip it.
-  # If a Cluster is enabled, capture all of its Hosts.
-  # If a Host is enabled, capture all of its Vms.
-  def self.capture_targets(zone = nil, options = {})
-    zone = MiqServer.my_server.zone if zone.nil?
-    zone = Zone.find(zone) if zone.kind_of?(Integer)
-    capture_infra_targets(zone.ems_infras, options) + \
-      capture_cloud_targets(zone.ems_clouds, options) + \
-      capture_container_targets(zone.ems_containers, options)
   end
 end

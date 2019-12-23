@@ -271,7 +271,8 @@ describe MiqServer do
 
     context "with a worker" do
       before do
-        @worker = FactoryBot.create(:miq_worker, :miq_server_id => @miq_server.id, :pid => Process.pid)
+        MiqWorkerType.seed
+        @worker = FactoryBot.create(:miq_generic_worker, :miq_server_id => @miq_server.id, :pid => Process.pid)
         allow(@miq_server).to receive(:validate_worker).and_return(true)
         @miq_server.setup_drb_variables
         @miq_server.worker_add(@worker.pid)
@@ -296,7 +297,7 @@ describe MiqServer do
       it "quiesce_workers do mini-monitor_workers loop" do
         expect(@miq_server).to receive(:heartbeat)
         expect(@miq_server).to receive(:quiesce_workers_loop_timeout?).never
-        allow_any_instance_of(MiqWorker).to receive(:is_stopped?).and_return(true, false)
+        @worker.update(:status => MiqWorker::STATUS_STOPPED)
         @miq_server.workers_quiesced?
       end
 
@@ -315,58 +316,6 @@ describe MiqServer do
         @miq_server.instance_variable_set(:@quiesce_loop_timeout, 10.minutes)
         expect_any_instance_of(MiqWorker).to receive(:kill).never
         expect(@miq_server.quiesce_workers_loop_timeout?).not_to be_truthy
-      end
-
-      context "with an active messsage and a second server" do
-        before do
-          @msg = FactoryBot.create(:miq_queue, :state => 'dequeue')
-          @miq_server2 = FactoryBot.create(:miq_server, :is_master => true, :zone => @zone)
-        end
-
-        it "will validate the 'started' first server's active message when called on it" do
-          @msg.handler = @miq_server.reload
-          @msg.save
-          expect_any_instance_of(MiqQueue).to receive(:check_for_timeout)
-          @miq_server.validate_active_messages
-        end
-
-        it "will validate the 'not responding' first server's active message when called on it" do
-          @miq_server.update_attribute(:status, 'not responding')
-          @msg.handler = @miq_server.reload
-          @msg.save
-          expect_any_instance_of(MiqQueue).to receive(:check_for_timeout)
-          @miq_server.validate_active_messages
-        end
-
-        it "will validate the 'not resonding' second server's active message when called on first server" do
-          @miq_server2.update_attribute(:status, 'not responding')
-          @msg.handler = @miq_server2
-          @msg.save
-          expect_any_instance_of(MiqQueue).to receive(:check_for_timeout)
-          @miq_server.validate_active_messages
-        end
-
-        it "will NOT validate the 'started' second server's active message when called on first server" do
-          @miq_server2.update_attribute(:status, 'started')
-          @msg.handler = @miq_server2
-          @msg.save
-          expect_any_instance_of(MiqQueue).to receive(:check_for_timeout).never
-          @miq_server.validate_active_messages
-        end
-
-        it "will validate a worker's active message when called on the worker's server" do
-          @msg.handler = @worker
-          @msg.save
-          expect_any_instance_of(MiqQueue).to receive(:check_for_timeout)
-          @miq_server.validate_active_messages
-        end
-
-        it "will not validate a worker's active message when called on the worker's server if already processed" do
-          @msg.handler = @worker
-          @msg.save
-          expect_any_instance_of(MiqQueue).to receive(:check_for_timeout).never
-          @miq_server.validate_active_messages([@worker.id])
-        end
       end
 
       context "#server_timezone" do

@@ -1093,7 +1093,7 @@
     :retry_interval: 15 # in seconds
   :limits:
     :max_concurrent_tasks_per_ems: 10
-    :max_concurrent_tasks_per_host: 10
+    :max_concurrent_tasks_per_conversion_host: 10
     :cpu_limit_per_host: unlimited
     :network_limit_per_host: unlimited
 :ui:
@@ -1134,10 +1134,6 @@
     :agent_coordinator_worker:
       :heartbeat_timeout: 30.minutes
       :poll: 30.seconds
-    :ems_inventory_collector_worker:
-      :disabled: true
-      :nice_delta: 1
-      :poll: 5.seconds
     :ems_refresh_core_worker:
       :poll: 1.seconds
       :nice_delta: 1
@@ -1178,6 +1174,7 @@
         :memory_threshold: 600.megabytes
         :nice_delta: 7
         :poll_method: :escalate
+      :ems_operations_worker: {}
       :ems_refresh_worker:
         :defaults:
           :memory_threshold: 2.gigabytes
@@ -1193,8 +1190,6 @@
         :ems_refresh_worker_google_network: {}
         :ems_refresh_worker_microsoft: {}
         :ems_refresh_worker_nuage_network: {}
-        :ems_refresh_worker_cinder: {}
-        :ems_refresh_worker_swift: {}
       :event_handler:
         :cpu_usage_threshold: 0.percent
         :nice_delta: 7
@@ -1243,6 +1238,7 @@
       :performance_rollup_purging_start_delay: 5.minutes
       :policy_events_purge_interval: 1.day
       :poll: 15.seconds
+      :queue_timeout_interval: 15.seconds
       :report_result_purge_interval: 1.week
       :server_log_stats_interval: 5.minutes
       :server_stats_interval: 60.seconds

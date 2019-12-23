@@ -507,7 +507,7 @@ class MiqRequestWorkflow
     unless email.blank?
       l = MiqLdap.new
       if l.bind_with_default == true
-        raise _("No information returned for %{email}") % {:email => email} if (d = l.get_user_info(email)).nil?
+        raise _("No information returned for %{email}") % {:email => email} if (d = l.get_user_info(email, "mail")).nil?
         [:first_name, :last_name, :address, :city, :state, :zip, :country, :title, :company,
          :department, :office, :phone, :phone_mobile, :manager, :manager_mail, :manager_phone].each do |prop|
           @values["owner_#{prop}".to_sym] = d[prop].try(:dup)
@@ -768,6 +768,12 @@ class MiqRequestWorkflow
   end
 
   def update_field_visibility
+  end
+
+  # Subclasses should define this as appropriate.
+  #
+  def get_source_and_targets(_refresh = false)
+    raise NotImplementedError, _("get_source_and_targets must be implemented in a subclass")
   end
 
   def refresh_field_values(values)

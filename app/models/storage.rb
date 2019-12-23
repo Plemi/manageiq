@@ -1,4 +1,8 @@
 class Storage < ApplicationRecord
+  include NewWithTypeStiMixin
+
+  belongs_to :ext_management_system, :foreign_key => :ems_id, :inverse_of => :storages
+
   has_many :vms_and_templates, :foreign_key => :storage_id, :dependent => :nullify, :class_name => "VmOrTemplate"
   has_many :miq_templates,     :foreign_key => :storage_id
   has_many :vms,               :foreign_key => :storage_id
@@ -23,6 +27,8 @@ class Storage < ApplicationRecord
 
   virtual_has_many  :storage_clusters
 
+  scope :available, -> { where(:maintenance => [nil, false]) }
+
   validates_presence_of     :name
   # We can't uncomment this until the SmartProxy starts sending location when registering VMs
   # validates_uniqueness_of   :location
@@ -32,7 +38,6 @@ class Storage < ApplicationRecord
 
   acts_as_miq_taggable
 
-  include SerializedEmsRefObjMixin
   include FilterableMixin
   include SupportsFeatureMixin
   include Metric::CiMixin

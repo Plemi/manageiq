@@ -17,7 +17,7 @@ class ManageIQ::Providers::CloudManager::OrchestrationTemplateRunner < ::Job
     my_signal(false, :deploy_orchestration_stack, :priority => MiqQueue::HIGH_PRIORITY)
   end
 
-  def update
+  def reconfigure
     time = Time.zone.now
     update(:started_on => time)
     miq_task.update(:started_on => time)
@@ -36,8 +36,8 @@ class ManageIQ::Providers::CloudManager::OrchestrationTemplateRunner < ::Job
     save!
     my_signal(false, :poll_stack_status, 10)
   rescue StandardError => err
-    _log.log_backtrace(err)
-    my_signal(minimize_indirect, :post_stack_run, err.message, 'error')
+    _log.error("Error deploying orchestration stack : #{err.class} - #{err.message}")
+    my_signal(minimize_indirect, :abort_job, err.message, 'error')
   end
 
   def update_orchestration_stack
@@ -49,8 +49,8 @@ class ManageIQ::Providers::CloudManager::OrchestrationTemplateRunner < ::Job
     save!
     my_signal(false, :poll_stack_status, 10)
   rescue StandardError => err
-    _log.log_backtrace(err)
-    my_signal(minimize_indirect, :post_stack_run, err.message, 'error')
+    _log.error("Error updating orchestration stack : #{err.class} - #{err.message}")
+    my_signal(minimize_indirect, :abort_job, err.message, 'error')
   end
 
   def poll_stack_status(interval)
@@ -66,7 +66,7 @@ class ManageIQ::Providers::CloudManager::OrchestrationTemplateRunner < ::Job
       my_signal(minimize_indirect, :post_stack_run, "Orchestration stack [#{orchestration_stack.name}] #{status}", 'ok')
     when 'rollback_complete', 'delete_complete', /failed$/, /canceled$/
       _log.error("Orchestration stack deployment error: #{message}. Please examine stack resources for more details")
-      my_signal(minimize_indirect, :post_stack_run, "Orchestration stack deployment error: #{message}", 'error')
+      my_signal(minimize_indirect, :abort_job, "Orchestration stack deployment error: #{message}", 'error')
     else
       interval = 60 if interval > 60
       my_signal(false, :poll_stack_status, interval * 2, :deliver_on => Time.now.utc + interval)
@@ -75,8 +75,8 @@ class ManageIQ::Providers::CloudManager::OrchestrationTemplateRunner < ::Job
     # naming convention requires status to end with "failed"
     options.merge!(:orchestration_stack_status => 'check_status_failed', :orchestration_stack_message => err.message)
     save!
-    _log.log_backtrace(err)
-    my_signal(minimize_indirect, :post_stack_run, err.message, 'error')
+    _log.error("Error polling orchestration stack status : #{err.class} - #{err.message}")
+    my_signal(minimize_indirect, :abort_job, err.message, 'error')
   end
 
   def post_stack_run(message, status)
@@ -94,6 +94,10 @@ class ManageIQ::Providers::CloudManager::OrchestrationTemplateRunner < ::Job
     else
       queue_signal(action, *args, :deliver_on => deliver_on, :priority => priority)
     end
+  end
+
+  def queue_signal(*args, deliver_on: nil, priority: MiqQueue::NORMAL_PRIORITY)
+    super(*args, :role => 'ems_operations', :deliver_on => deliver_on, :priority => priority)
   end
 
   def orchestration_stack
@@ -124,7 +128,7 @@ class ManageIQ::Providers::CloudManager::OrchestrationTemplateRunner < ::Job
     {
       :initializing               => {'initialize'       => 'waiting_to_start'},
       :start                      => {'waiting_to_start' => 'running'},
-      :update                     => {'waiting_to_start' => 'updating'},
+      :reconfigure                => {'waiting_to_start' => 'updating'},
       :deploy_orchestration_stack => {'running'          => 'stack_job'},
       :update_orchestration_stack => {'updating'         => 'stack_job'},
       :poll_stack_status          => {'stack_job'        => 'stack_job'},
@@ -134,19 +138,6 @@ class ManageIQ::Providers::CloudManager::OrchestrationTemplateRunner < ::Job
       :cancel                     => {'*'                => 'canceling'},
       :error                      => {'*'                => '*'}
     }
-  end
-
-  def queue_signal(*args, deliver_on: nil, priority: MiqQueue::NORMAL_PRIORITY)
-    MiqQueue.put(
-      :class_name  => self.class.name,
-      :method_name => "signal",
-      :instance_id => id,
-      :priority    => priority,
-      :role        => 'ems_operations',
-      :zone        => options[:zone],
-      :args        => args,
-      :deliver_on  => deliver_on
-    )
   end
 
   def orchestration_manager

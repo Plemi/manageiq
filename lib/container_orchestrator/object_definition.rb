@@ -2,7 +2,7 @@ class ContainerOrchestrator
   module ObjectDefinition
     private
 
-    def deployment_config_definition(name)
+    def deployment_definition(name)
       {
         :metadata => {
           :name      => name,
@@ -10,11 +10,10 @@ class ContainerOrchestrator
           :namespace => my_namespace,
         },
         :spec     => {
-          :selector => {:name => name, :app => app_name},
+          :selector => {:matchLabels => {:name => name}},
           :template => {
             :metadata => {:name => name, :labels => {:name => name, :app => app_name}},
             :spec     => {
-              :serviceAccount     => "miq-anyuid",
               :serviceAccountName => "miq-anyuid",
               :containers         => [{
                 :name          => name,
@@ -58,19 +57,22 @@ class ContainerOrchestrator
 
     def default_environment
       [
-        {:name => "ARTEMIS_USER",            :value => ENV["ARTEMIS_USER"]},
-        {:name => "DATABASE_SERVICE_NAME",   :value => ENV["DATABASE_SERVICE_NAME"]},
+        {:name => "DATABASE_PORT",           :value => ENV["DATABASE_PORT"]},
         {:name => "GUID",                    :value => MiqServer.my_guid},
         {:name => "MEMCACHED_SERVER",        :value => ENV["MEMCACHED_SERVER"]},
         {:name => "MEMCACHED_SERVICE_NAME",  :value => ENV["MEMCACHED_SERVICE_NAME"]},
         {:name => "WORKER_HEARTBEAT_FILE",   :value => Rails.root.join("tmp", "worker.hb").to_s},
         {:name => "WORKER_HEARTBEAT_METHOD", :value => "file"},
-        {:name      => "ARTEMIS_PASSWORD",
-         :valueFrom => {:secretKeyRef=>{:name => "#{app_name}-secrets", :key => "artemis-password"}}},
-        {:name      => "DATABASE_URL",
-         :valueFrom => {:secretKeyRef=>{:name => "#{app_name}-secrets", :key => "database-url"}}},
-        {:name      => "V2_KEY",
-         :valueFrom => {:secretKeyRef=>{:name => "#{app_name}-secrets", :key => "v2-key"}}}
+        {:name      => "DATABASE_HOSTNAME",
+         :valueFrom => {:secretKeyRef=>{:name => "postgresql-secrets", :key => "hostname"}}},
+        {:name      => "DATABASE_NAME",
+         :valueFrom => {:secretKeyRef=>{:name => "postgresql-secrets", :key => "dbname"}}},
+        {:name      => "DATABASE_PASSWORD",
+         :valueFrom => {:secretKeyRef=>{:name => "postgresql-secrets", :key => "password"}}},
+        {:name      => "DATABASE_USER",
+         :valueFrom => {:secretKeyRef=>{:name => "postgresql-secrets", :key => "username"}}},
+        {:name      => "ENCRYPTION_KEY",
+         :valueFrom => {:secretKeyRef=>{:name => "#{app_name}-secrets", :key => "encryption-key"}}}
       ]
     end
 

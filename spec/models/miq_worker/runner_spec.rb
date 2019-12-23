@@ -6,18 +6,6 @@ describe MiqWorker::Runner do
       allow(@worker_base).to receive(:prepare)
     end
 
-    it "SIGINT" do
-      allow(@worker_base).to receive(:run).and_raise(Interrupt)
-      expect(@worker_base).to receive(:do_exit)
-      @worker_base.start
-    end
-
-    it "SIGTERM" do
-      allow(@worker_base).to receive(:run).and_raise(SignalException, "SIGTERM")
-      expect(@worker_base).to receive(:do_exit)
-      @worker_base.start
-    end
-
     it "Handles exception TemporaryFailure" do
       allow(@worker_base).to receive(:heartbeat).and_raise(MiqWorker::Runner::TemporaryFailure)
       expect(@worker_base).to receive(:recover_from_temporary_failure)
@@ -67,6 +55,24 @@ describe MiqWorker::Runner do
       expect(@worker_base).to receive(:after_sync_config)
 
       @worker_base.send(:process_message, "sync_config")
+    end
+  end
+
+  context "#initialize" do
+    let(:worker) do
+      server_id = EvmSpecHelper.local_miq_server.id
+      FactoryBot.create(:miq_worker, :miq_server_id => server_id, :type => "MiqGenericWorker")
+    end
+
+    let!(:runner) { MiqWorker::Runner.new(:guid => worker.guid) }
+
+    it "configures the #worker attribute correctly" do
+      expect(runner.worker.id).to eq(worker.id)
+      expect(runner.worker.guid).to eq(worker.guid)
+    end
+
+    it "sets the MiqWorker.my_guid class attribute" do
+      expect(MiqWorker.my_guid).to eq(worker.guid)
     end
   end
 end

@@ -147,10 +147,11 @@ describe ExtManagementSystem do
   end
 
   it "#total_storages" do
-    storage1 = FactoryBot.create(:storage)
-    storage2 = FactoryBot.create(:storage)
-
     ems = FactoryBot.create(:ems_vmware)
+
+    storage1 = FactoryBot.create(:storage, :ems_id => ems.id)
+    storage2 = FactoryBot.create(:storage, :ems_id => ems.id)
+
     FactoryBot.create(
       :host_vmware,
       :storages              => [storage1, storage2],
@@ -739,6 +740,16 @@ describe ExtManagementSystem do
       expect(result.size).to eq(2)
       expect(result[0]).to eq(%w(region zone kind ems containers))
       expect(result[1][4..-1]).to eq([2])
+    end
+  end
+
+  context "#queue_name_for_ems_operations" do
+    it "defaults to 'generic' as the queue name for ems operations" do
+      ems_cloud = FactoryBot.create(:ems_cloud)
+      ems_container = FactoryBot.create(:ems_container)
+
+      expect(ems_cloud.queue_name_for_ems_operations).to eql('generic')
+      expect(ems_container.queue_name_for_ems_operations).to eql('generic')
     end
   end
 end

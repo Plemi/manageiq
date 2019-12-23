@@ -57,7 +57,7 @@ class ServiceOrchestration < Service
     }
     @update_stack_job = ManageIQ::Providers::CloudManager::OrchestrationTemplateRunner.create_job(job_options)
     update(:options => options.merge(:update_stack_job_id => @update_stack_job.id))
-    @update_stack_job.signal(:update)
+    @update_stack_job.signal(:reconfigure)
   end
 
   def orchestration_stack
@@ -192,6 +192,8 @@ class ServiceOrchestration < Service
 
   def wait_on_orchestration_stack
     while deploy_stack_job.orchestration_stack.blank?
+      raise _("Orchestration template runner finished with error. Check evm.log for details.") if deploy_stack_job.status == 'error'
+
       _log.info("Waiting for the deployment of orchestration stack [#{stack_name}]...")
       sleep 2
       # Code running with Rails QueryCache enabled,

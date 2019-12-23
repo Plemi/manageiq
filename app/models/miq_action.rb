@@ -616,19 +616,13 @@ class MiqAction < ApplicationRecord
     age_threshold = (Time.now.utc - action.options[:age])
     has_ch = false
     snaps_to_delete = rec.snapshots.each_with_object([]) do |s, arr|
-      has_ch = true if s.is_a_type?(:consolidate_helper)
-      next if s.is_a_type?(:evm_snapshot) || s.is_a_type?(:vcb_snapshot)
+      next if s.is_a_type?(:evm_snapshot)
 
       arr << s if s.create_time < age_threshold
     end
 
     if snaps_to_delete.empty?
       MiqPolicy.logger.info("#{log_prefix} has no snapshots older than [#{age_threshold}]")
-      return
-    end
-
-    if has_ch
-      MiqPolicy.logger.warn("#{log_prefix} has a Consolidate Helper snapshot, no shanpshots will be deleted")
       return
     end
 
@@ -650,22 +644,13 @@ class MiqAction < ApplicationRecord
     has_ch = false
     snap   = nil
     rec.snapshots.order("create_time DESC").each do |s|
-      if s.is_a_type?(:consolidate_helper)
-        has_ch = true
-        next
-      end
-      next if s.is_a_type?(:evm_snapshot) || s.is_a_type?(:vcb_snapshot)
+      next if s.is_a_type?(:evm_snapshot)
 
       snap ||= s # Take the first eligable snapshot
     end
 
     if snap.nil?
       MiqPolicy.logger.info("#{log_prefix} has no snapshots available to delete")
-      return
-    end
-
-    if has_ch
-      MiqPolicy.logger.warn("#{log_prefix} has a Consolidate Helper snapshot, no shanpshot will be deleted")
       return
     end
 
@@ -1026,7 +1011,8 @@ class MiqAction < ApplicationRecord
       target.send(target_method, *target_args)
     else
       MiqPolicy.logger.info("#{log_prefix} Queueing #{log_suffix}")
-      MiqQueue.put(
+
+      options = {
         :class_name  => static ? target.name : target.class.name,
         :method_name => target_method,
         :instance_id => static ? nil : target.id,
@@ -1034,7 +1020,13 @@ class MiqAction < ApplicationRecord
         :role        => role,
         :priority    => MiqQueue::HIGH_PRIORITY,
         :zone        => zone
-      )
+      }
+
+      if role == 'ems_operations'
+        options[:queue_name] = target.try(:queue_name_for_ems_operations) || 'generic'
+      end
+
+      MiqQueue.put(options)
     end
   end
 

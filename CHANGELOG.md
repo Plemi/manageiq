@@ -4,6 +4,113 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 
+# Unreleased as of Sprint 126 ending 2019-12-09
+
+### Added
+
+* Streamline Cap and U capture [(#19599)](https://github.com/ManageIQ/manageiq/pull/19599)
+* Development environment performance improvement by removing the seeding of the database on startup [(#19535)](https://github.com/ManageIQ/manageiq/pull/19535)
+* Drop support for forking workers, use spawn by default [(#19556)](https://github.com/ManageIQ/manageiq/pull/19556)
+
+### Fixed
+
+* Look up worker by guid not pid because pid is unreliable in a container deployment [(#19557)](https://github.com/ManageIQ/manageiq/pull/19557)
+* Fix currency list on new symbol, UZS [(#19567)](https://github.com/ManageIQ/manageiq/pull/19567)
+* Raise an exception if an invalid path is passed to autoload [(#19537)](https://github.com/ManageIQ/manageiq/pull/19537)
+
+# Unreleased as of Sprint 125 ending 2019-11-25
+
+### Added
+* Improved metrics_capture support [(#19511)](https://github.com/ManageIQ/manageiq/pull/19511), [(#19506)](https://github.com/ManageIQ/manageiq/pull/19506), [(#19522)](https://github.com/ManageIQ/manageiq/pull/19522)
+* Added support for configuring SAML and OIDC authentication settings enabling automated configuration from the appliance_console CLI [(#19525)](https://github.com/ManageIQ/manageiq/pull/19525)
+* Added the ability for the orchestrator to run on either OpenShift or Kubernetes by using only objects supported by both.  [(#19500)](https://github.com/ManageIQ/manageiq/pull/19500)
+* Added MiqWorkerType model replacing the worker type constant [(#19536)](https://github.com/ManageIQ/manageiq/pull/19536)
+* Use table currencies if they exist in ChargebackRateDetailCurrency [(#19350)](https://github.com/ManageIQ/manageiq/pull/19350)
+
+### Fixed
+
+* Removed no longer supported oVirt V3 api calls [(#19508)](https://github.com/ManageIQ/manageiq/pull/19508)
+* Fixed starting of metrics collector workers, even when the role was not active [(#19494)](https://github.com/ManageIQ/manageiq/pull/19494)
+* Ensure dashboard names are only unique within a group [(#19491)](https://github.com/ManageIQ/manageiq/pull/19491)
+* Fixed missing display of available disk space under Utilization [(#19502)](https://github.com/ManageIQ/manageiq/pull/19502)
+* Fix user lookups by email when provisioning [(#19515)](https://github.com/ManageIQ/manageiq/pull/19515)
+
+
+# Unreleased as of Sprint 124 ending 2019-11-11
+
+### Added
+* [V2V] Add VM validation for warm migration eligibility and updated specs to … [(#19401)](https://github.com/ManageIQ/manageiq/pull/19401)
+* Add AuthenticationMixin to Vm [(#19444)](https://github.com/ManageIQ/manageiq/pull/19444)
+* Add support to automate external auth config for ldap [(#19228)](https://github.com/ManageIQ/manageiq/pull/19228)
+* Cap&U collector tests [(#19443)](https://github.com/ManageIQ/manageiq/pull/19443)
+* Cap&U Extract logic to determine queue items [(#19448)](https://github.com/ManageIQ/manageiq/pull/19448)
+* Cu schedule collector by ems [(#19420)](https://github.com/ManageIQ/manageiq/pull/19420)
+* Enable workers as containers [(#19451)](https://github.com/ManageIQ/manageiq/pull/19451)
+* Optionally symlink a plugin's spec/manageiq [(#19481)](https://github.com/ManageIQ/manageiq/pull/19481)
+* Return MiqTask id from MiqWidget.queue_generate_content [(#19445)](https://github.com/ManageIQ/manageiq/pull/19445)
+* Update the orchestrator for new database secret format [(#19457)](https://github.com/ManageIQ/manageiq/pull/19457)
+
+### Fixed
+* Adding task error status to log management [(#19480)](https://github.com/ManageIQ/manageiq/pull/19480)
+* Base monolithic container image on pods ui worker [(#19463)](https://github.com/ManageIQ/manageiq/pull/19463)
+* Fix key_pair class lookup [(#19486)](https://github.com/ManageIQ/manageiq/pull/19486)
+* Remove the check for a "current" snapshot [(#19458)](https://github.com/ManageIQ/manageiq/pull/19458)
+
+# Unreleased as of Sprint 123 ending 2019-10-28
+
+### Added
+* Update puma to latest.  Be less conservative. [(#19389)](https://github.com/ManageIQ/manageiq/pull/19389)
+* Update to config gem 2.0.0 [(#19418)](https://github.com/ManageIQ/manageiq/pull/19418)
+* Add a base Job#queue_signal method [(#19281)](https://github.com/ManageIQ/manageiq/pull/19281)
+* drop first_in => interval from scheduler [(#19385)](https://github.com/ManageIQ/manageiq/pull/19385)
+* Reduce the number of gems for AWS SDK usage [(#19436)](https://github.com/ManageIQ/manageiq/pull/19436)
+* Update sys-filesystem gem to 1.3.1 [(#19399)](https://github.com/ManageIQ/manageiq/pull/19399)
+* require specific aws gems [(#19411)](https://github.com/ManageIQ/manageiq/pull/19411)
+* [V2V] Pin InfraConversionJob to first server where it runs [(#19416)](https://github.com/ManageIQ/manageiq/pull/19416)
+* Allow plugins to bring their own miq_reports [(#19391)](https://github.com/ManageIQ/manageiq/pull/19391)
+* Generate perfomance reports in specific date range [(#19393)](https://github.com/ManageIQ/manageiq/pull/19393)
+* Don't require modifying the source to purge vms [(#19406)](https://github.com/ManageIQ/manageiq/pull/19406)
+* Remove zanata-related stuff from manageiq [(#19404)](https://github.com/ManageIQ/manageiq/pull/19404)
+* Enumerable#reverse_each is faster than Enumerable#reverse.each [(#19409)](https://github.com/ManageIQ/manageiq/pull/19409)
+* Prefer block version of File.open to ensure file handle gets automatically closed [(#19412)](https://github.com/ManageIQ/manageiq/pull/19412)
+* Revert "Prefer block version of File.open to ensure file handle gets automatically closed" [(#19427)](https://github.com/ManageIQ/manageiq/pull/19427)
+
+
+### Fixed
+* Adding Volume Type (CloudVolumeType) to RBAC [(#19408)](https://github.com/ManageIQ/manageiq/pull/19408)
+* Revert "Remove unused Service::RetirementManagement.retire_service_resources method" [(#19417)](https://github.com/ManageIQ/manageiq/pull/19417)
+* Passes result_format when automate workspace is not expected [(#19407)](https://github.com/ManageIQ/manageiq/pull/19407)
+* Fixed sorting in TenantQuotas report [(#19415)](https://github.com/ManageIQ/manageiq/pull/19415)
+* Save the updated widget timestamp [(#19405)](https://github.com/ManageIQ/manageiq/pull/19405)
+* Utility function to update PxeMenu list [(#19134)](https://github.com/ManageIQ/manageiq/pull/19134)
+* Output constant must match the constantized class name [(#19400)](https://github.com/ManageIQ/manageiq/pull/19400)
+* Generate retire requests from the base class name [(#19398)](https://github.com/ManageIQ/manageiq/pull/19398)
+* SystemService: don't use gettext in model constants [(#19403)](https://github.com/ManageIQ/manageiq/pull/19403)
+* replicate_server_settings is parsing serverid incorrect [(#19433)](https://github.com/ManageIQ/manageiq/pull/19433)
+* Cleanup after Ansible runner. [(#19383)](https://github.com/ManageIQ/manageiq/pull/19383)
+
+
+# Unreleased as of Sprint 122 ending 2019-10-14
+
+### Added
+- [V2V] Remove removing_snapshots state [(#19374)](https://github.com/ManageIQ/manageiq/pull/19374)
+- Add a verify_credentials_task method [(#19346)](https://github.com/ManageIQ/manageiq/pull/19346)
+- CloudNetwork NetworkPort and SecurityGroup belong to a ResourceGroup [(#19343)](https://github.com/ManageIQ/manageiq/pull/19343)
+- Convert unsafe SQL to pure active record methods (rails 5.2) [(#19366)](https://github.com/ManageIQ/manageiq/pull/19366)
+- Pluggable ScanItems [(#19388)](https://github.com/ManageIQ/manageiq/pull/19388)
+- Rbac no references array [(#19318)](https://github.com/ManageIQ/manageiq/pull/19318)
+- Reload stale source_tenant after destroying self (rails 5.2) [(#19367)](https://github.com/ManageIQ/manageiq/pull/19367)
+- Removing groups changes users current group [(#19376)](https://github.com/ManageIQ/manageiq/pull/19376)
+- Update default_value_for rails 5.2/6 support [(#19370)](https://github.com/ManageIQ/manageiq/pull/19370)
+
+### Fixed
+- Service display has been renamed to visible. [(#19211)](https://github.com/ManageIQ/manageiq/pull/19211)
+- fix schedule_settings [(#19386)](https://github.com/ManageIQ/manageiq/pull/19386)
+- Adding Volume Snapshot (CloudVolumeSnapshot) to RBAC [(#19356)](https://github.com/ManageIQ/manageiq/pull/19356)
+- [V2V] Extend InfraConversionJob timeout [(#19373)](https://github.com/ManageIQ/manageiq/pull/19373)
+- [V2V] Fix progress percentage calculation [(#19375)](https://github.com/ManageIQ/manageiq/pull/19375)
+- [V2V] Remove handover from shutdown_vm transition [(#19371)](https://github.com/ManageIQ/manageiq/pull/19371)
+- Set default OrchestrationTemplateRunner timeout to 100 minutes. [(#19381)](https://github.com/ManageIQ/manageiq/pull/19381)
 
 ## Unreleased as of Sprint 121 ending 2019-09-30
 

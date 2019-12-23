@@ -30,14 +30,14 @@ RSpec.describe ConversionHost, :v2v do
         expect(conversion_host_1.eligible?).to eq(false)
       end
 
-      it "fails when no source transport method is enabled" do
+      it "fails when authentication check fails" do
         allow(conversion_host_1).to receive(:source_transport_method).and_return('vddk')
         allow(conversion_host_1).to receive(:authentication_check).and_return([false, 'failed'])
         allow(conversion_host_1).to receive(:check_concurrent_tasks).and_return(true)
         expect(conversion_host_1.eligible?).to eq(false)
       end
 
-      it "fails when no source transport method is enabled" do
+      it "fails when concurrent tasks check fails" do
         allow(conversion_host_1).to receive(:source_transport_method).and_return('vddk')
         allow(conversion_host_1).to receive(:authentication_check).and_return([true, 'worked'])
         allow(conversion_host_1).to receive(:check_concurrent_tasks).and_return(false)
@@ -52,14 +52,30 @@ RSpec.describe ConversionHost, :v2v do
       end
     end
 
+    context "#warm_migration_eligible?" do
+      it "fails when source transport method is ssh" do
+        allow(conversion_host_1).to receive(:source_transport_method).and_return('ssh')
+        allow(conversion_host_1).to receive(:authentication_check).and_return([true, 'worked'])
+        allow(conversion_host_1).to receive(:check_concurrent_tasks).and_return(true)
+        expect(conversion_host_1.warm_migration_eligible?).to eq(false)
+      end
+
+      it "succeeds when all criteria are met" do
+        allow(conversion_host_1).to receive(:source_transport_method).and_return('vddk')
+        allow(conversion_host_1).to receive(:authentication_check).and_return([true, 'worked'])
+        allow(conversion_host_1).to receive(:check_concurrent_tasks).and_return(true)
+        expect(conversion_host_1.eligible?).to eq(true)
+      end
+    end
+
     context "#check_concurrent_tasks" do
       context "default max concurrent tasks is equal to current active tasks" do
-        before { stub_settings_merge(:transformation => {:limits => {:max_concurrent_tasks_per_host => 1}}) }
+        before { stub_settings_merge(:transformation => {:limits => {:max_concurrent_tasks_per_conversion_host => 1}}) }
         it { expect(conversion_host_1.check_concurrent_tasks).to eq(false) }
       end
 
       context "default max concurrent tasks is greater than current active tasks" do
-        before { stub_settings_merge(:transformation => {:limits => {:max_concurrent_tasks_per_host => 10}}) }
+        before { stub_settings_merge(:transformation => {:limits => {:max_concurrent_tasks_per_conversion_host => 10}}) }
         it { expect(conversion_host_1.check_concurrent_tasks).to eq(true) }
       end
 
@@ -130,7 +146,7 @@ RSpec.describe ConversionHost, :v2v do
 
   shared_examples_for "#check_ssh_connection" do
     it "fails when SSH send an error" do
-      allow(conversion_host).to receive(:connect).and_raise('Unexpected failure')
+      allow(conversion_host).to receive(:connect_ssh).and_raise('Unexpected failure')
       expect(conversion_host.check_ssh_connection).to eq(false)
     end
 
@@ -240,9 +256,6 @@ RSpec.describe ConversionHost, :v2v do
 
       before do
         allow(ems).to receive(:authentications).and_return(ssh_auth)
-        allow(ssh_auth).to receive(:where).with(:authype => 'ssh_keypair').and_return(ssh_auth)
-        allow(ssh_auth).to receive(:where).and_return(ssh_auth)
-        allow(ssh_auth).to receive(:not).with(:userid => nil, :auth_key => nil).and_return([ssh_auth])
       end
 
       it_behaves_like "#check_ssh_connection"
@@ -416,7 +429,7 @@ RSpec.describe ConversionHost, :v2v do
     end
 
     it "finds the credentials associated with the resource if credentials cannot be found for the conversion host" do
-      vm.ext_management_system.authentications << auth_default
+      vm.authentications << auth_default
       host.authentications << auth_default
       expect(conversion_host_vm.send(:find_credentials)).to eq(auth_default)
       expect(conversion_host_host.send(:find_credentials)).to eq(auth_default)
@@ -574,6 +587,31 @@ RSpec.describe ConversionHost, :v2v do
       allow(conversion_host).to receive(:connect_ssh).and_raise(StandardError, 'fake error')
       expected_message = "Could not apply the limits in '#{path}' on '#{vm.name}' with [StandardError: fake error]"
       expect { conversion_host.apply_task_limits(path, limits) }.to raise_error(expected_message)
+    end
+  end
+
+  context ".queue_configuration" do
+    let(:params) { {:name => 'updated_config'} }
+    let(:ems) { FactoryBot.create(:ems_openstack) }
+    let(:vm) { FactoryBot.create(:vm_openstack, :ext_management_system => ems) }
+
+    it "queues a configuration with the queue_configuration method" do
+      task_id = described_class.queue_configuration('enable', nil, vm, params, nil)
+
+      expect(MiqTask.find(task_id)).to have_attributes(
+        :name   => "Configuring a conversion_host: operation=enable resource=(name: #{vm.name} type: #{vm.class.name} id: #{vm.id})",
+        :state  => "Queued",
+        :status => "Ok"
+      )
+
+      expect(MiqQueue.where(:class_name => described_class.name).first).to have_attributes(
+        :class_name  => described_class.name,
+        :method_name => 'enable',
+        :role        => 'ems_operations',
+        :queue_name  => 'generic',
+        :zone        => ems.my_zone,
+        :args        => [{:name => 'updated_config', :task_id => task_id}, nil]
+      )
     end
   end
 end

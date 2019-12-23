@@ -72,7 +72,7 @@ class ExtManagementSystem < ApplicationRecord
   has_many :disks,             :through => :hardwares
   has_many :physical_servers,  :foreign_key => :ems_id, :inverse_of => :ext_management_system, :dependent => :destroy
 
-  has_many :storages,       -> { distinct },          :through => :hosts
+  has_many :storages, :foreign_key => :ems_id, :dependent => :destroy, :inverse_of => :ext_management_system
   has_many :ems_events,     -> { order("timestamp") }, :class_name => "EmsEvent",    :foreign_key => "ems_id",
                                                       :inverse_of => :ext_management_system
   has_many :generated_events, -> { order("timestamp") }, :class_name => "EmsEvent", :foreign_key => "generating_ems_id",
@@ -603,6 +603,13 @@ class ExtManagementSystem < ApplicationRecord
     "ems_#{id}"
   end
 
+  # Until all providers have an operations worker we can continue
+  # to use the GenericWorker to run ems_operations roles.
+  #
+  def queue_name_for_ems_operations
+    'generic'
+  end
+
   def enforce_policy(target, event)
     inputs = {:ext_management_system => self}
     inputs[:vm]   = target if target.kind_of?(Vm)
@@ -704,11 +711,6 @@ class ExtManagementSystem < ApplicationRecord
 
   def memory_reserve
     get_reserve(:memory_reserve)
-  end
-
-  def vm_log_user_event(_vm, user_event)
-    $log.info(user_event)
-    $log.warn("User event logging is not available on [#{self.class.name}] Name:[#{name}]")
   end
 
   def conversion_hosts

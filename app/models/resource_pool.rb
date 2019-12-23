@@ -1,4 +1,5 @@
 class ResourcePool < ApplicationRecord
+  include NewWithTypeStiMixin
   include TenantIdentityMixin
 
   acts_as_miq_taggable
@@ -6,7 +7,6 @@ class ResourcePool < ApplicationRecord
   belongs_to :ext_management_system, :foreign_key => "ems_id"
   has_many   :miq_events,            :as => :target, :dependent => :destroy
 
-  include SerializedEmsRefObjMixin
   include FilterableMixin
 
   include RelationshipMixin

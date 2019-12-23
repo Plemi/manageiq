@@ -46,26 +46,8 @@ module MiqServer::WorkerManagement::Heartbeat
     worker_set_message(w, message, *args) unless w.nil?
   end
 
-  def post_message_for_workers(class_name = nil, resync_needed = false, sync_message = nil)
-    processed_worker_ids = []
-    miq_workers.each do |w|
-      next unless class_name.nil? || (w.type == class_name)
-
-      # Note, STATUSES_CURRENT_OR_STARTING doesn't include 'stopping'.
-      # We already restarted 'stopping' workers, so we bail out early here.
-      # 'stopping' workers continue to run and heartbeat through drb, which
-      # updates the in memory @workers.  The last heartbeat in the workers row is
-      # NOT updated because we no longer call validate_heartbeat when we skip validate_worker below.
-      next unless MiqWorker::STATUSES_CURRENT_OR_STARTING.include?(w.status)
-      processed_worker_ids << w.id
-      next unless validate_worker(w)
-      worker_set_message(w, sync_message) if resync_needed
-    end
-    processed_worker_ids
-  end
-
   # Get the latest heartbeat between the SQL and memory (updated via DRb)
-  def validate_heartbeat(w)
+  def persist_last_heartbeat(w)
     last_heartbeat = workers_last_heartbeat(w)
 
     if w.last_heartbeat.nil?

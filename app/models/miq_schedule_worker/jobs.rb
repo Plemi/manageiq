@@ -68,11 +68,11 @@ class MiqScheduleWorker::Jobs
   end
 
   def metric_capture_perf_capture_timer
-    zone = MiqServer.my_server(true).zone
-    if zone.role_active?("ems_metrics_coordinator")
+    MiqServer.my_server.zone.ems_metrics_collectable.each do |ems|
       queue_work(
         :class_name  => "Metric::Capture",
         :method_name => "perf_capture_timer",
+        :args        => [ems.id],
         :role        => "ems_metrics_coordinator",
         :priority    => MiqQueue::HIGH_PRIORITY,
         :state       => ["ready", "dequeue"]
@@ -164,6 +164,10 @@ class MiqScheduleWorker::Jobs
     ::Settings.database.maintenance.vacuum_tables.each do |class_name|
       queue_work(:class_name => class_name, :method_name => "vacuum", :role => "database_operations", :zone => nil)
     end
+  end
+
+  def queue_miq_queue_check_for_timeout
+    queue_work(:class_name => "MiqQueue", :method_name => "check_for_timeout", :zone => nil)
   end
 
   def check_for_stuck_dispatch(threshold_seconds)

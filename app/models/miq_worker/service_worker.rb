@@ -8,7 +8,7 @@ class MiqWorker
       orchestrator = ContainerOrchestrator.new
 
       orchestrator.create_service(worker_deployment_name, SERVICE_PORT)
-      orchestrator.create_deployment_config(worker_deployment_name) do |definition|
+      orchestrator.create_deployment(worker_deployment_name) do |definition|
         configure_worker_deployment(definition)
 
         definition[:spec][:serviceName] = worker_deployment_name
@@ -24,7 +24,7 @@ class MiqWorker
 
     def delete_container_objects
       orch = ContainerOrchestrator.new
-      orch.delete_deployment_config(worker_deployment_name)
+      orch.delete_deployment(worker_deployment_name)
       orch.delete_service(worker_deployment_name)
     end
 
@@ -47,7 +47,7 @@ class MiqWorker
 
     # Can be overriden by including classes
     def container_image_name
-      "manageiq/manageiq-webserver-worker"
+      "manageiq-webserver-worker"
     end
   end
 end

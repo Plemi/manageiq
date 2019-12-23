@@ -60,26 +60,23 @@ end
 opt_parser.parse!
 worker_class = ARGV[0]
 
-require File.expand_path("../miq_worker_types", __dir__)
+require File.expand_path("../../../config/environment", __dir__)
 
 if options[:list]
-  puts ::MIQ_WORKER_TYPES.keys
+  puts MiqWorkerType.pluck(:worker_type)
   exit
 end
 opt_parser.abort(opt_parser.help) unless worker_class
 
-unless ::MIQ_WORKER_TYPES.keys.include?(worker_class)
+unless MiqWorkerType.find_by(:worker_type => worker_class)
   STDERR.puts "ERR:  `#{worker_class}` WORKER CLASS NOT FOUND!  Please run with `-l` to see possible worker class names."
   exit 1
 end
 
 # Skip heartbeating with single worker
 ENV["DISABLE_MIQ_WORKER_HEARTBEAT"] ||= options[:heartbeat] ? nil : '1'
-ENV["BUNDLER_GROUPS"] = MIQ_WORKER_TYPES[worker_class].join(',')
 
 options[:ems_id] ||= ENV["EMS_ID"]
-
-require File.expand_path("../../../config/environment", __dir__)
 
 if options[:roles].present?
   MiqServer.my_server.server_role_names += options[:roles]
@@ -92,7 +89,7 @@ unless worker_class.has_required_role?
   exit 1
 end
 
-worker_class.before_fork
+worker_class.preload_for_worker_role if worker_class.respond_to?(:preload_for_worker_role)
 unless options[:dry_run]
   create_options = {:pid => Process.pid}
   runner_options = {}
@@ -112,8 +109,10 @@ unless options[:dry_run]
 
   begin
     runner_options[:guid] = worker.guid
+    $log.info("Starting #{worker.class.name} with runner options #{runner_options}")
     worker.class::Runner.new(runner_options).tap(&:setup_sigterm_trap).start
   ensure
+    $log.info("Deleting worker record for #{worker.class.name}, id #{worker.id}")
     worker.delete
   end
 end

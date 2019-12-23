@@ -1113,37 +1113,6 @@ describe Rbac::Filterer do
       expect(results).to match_array(expected_objects)
     end
 
-    context 'with Middleware models' do
-      context 'with tags' do
-        before do
-          group.entitlement = Entitlement.new
-          group.entitlement.set_belongsto_filters([])
-          group.entitlement.set_managed_filters([["/managed/environment/prod"]])
-          group.save!
-        end
-
-        let(:count_of_created_instances) { 2 }
-
-        %w(
-          MiddlewareDatasource
-          MiddlewareDeployment
-          MiddlewareDomain
-          MiddlewareMessaging
-          MiddlewareServer
-          MiddlewareServerGroup
-        ).each do |middleware_model|
-          it "returns tagged instance of #{middleware_model}" do
-            middleware_instances = FactoryBot.create_list(middleware_model.tableize.singularize.to_sym,
-                                                           count_of_created_instances)
-            middleware_instances[0].tag_with('/managed/environment/prod', :ns => '*')
-            middleware_model_class = middleware_model.constantize
-            expect(middleware_model_class.count).to eq(count_of_created_instances)
-            get_rbac_results_for_and_expect_objects(middleware_model_class, [middleware_instances[0]])
-          end
-        end
-      end
-    end
-
     context "with User and Group" do
       context 'with tags' do
         let!(:tagged_group) { FactoryBot.create(:miq_group, :tenant => default_tenant) }
@@ -2441,6 +2410,12 @@ describe Rbac::Filterer do
       FactoryBot.create(:vm_vmware, :location => "b")
       FactoryBot.create(:vm_vmware, :location => "a")
       expect(described_class.filtered(Vm.all.order(:location)).map(&:location)).to eq(%w(a a b))
+    end
+
+    it "returns empty array for out-of-bounds condition when limits cannot be applied in SQL" do
+      FactoryBot.create(:vm)
+      recs = Rbac.filtered(Vm.includes(:platform), :limit => 3, :offset => 10, :filter => MiqExpression.new("NOT" => {"=" => {"field" => "Vm-platform", "value" => "foo"}}))
+      expect(recs).to eq([])
     end
   end
 

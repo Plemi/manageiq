@@ -27,7 +27,9 @@ class InfraConversionThrottler
         _log.debug("-- Available slots in EMS: #{slots}")
         _log.debug("- Looking for a conversion host for task for #{vm_name}")
 
-        eligible_hosts = ems.conversion_hosts.select(&:eligible?).sort_by { |ch| ch.active_tasks.count }
+        eligibility = job.migration_task.warm_migration? ? :warm_migration_eligible? : :eligible?
+        eligible_hosts = ems.conversion_hosts.select(&eligibility).sort_by { |ch| ch.active_tasks.count }
+
         if eligible_hosts.empty?
           _log.debug("-- No eligible conversion host for task for '#{vm_name}'")
           break
@@ -35,7 +37,7 @@ class InfraConversionThrottler
 
         _log.debug("-- Eligible conversion hosts:")
         eligible_hosts.each do |eh|
-          max_tasks = eh.max_concurrent_tasks || Settings.transformation.limits.max_concurrent_tasks_per_host
+          max_tasks = eh.max_concurrent_tasks || Settings.transformation.limits.max_concurrent_tasks_per_conversion_host
           _log.debug("--- #{eh.name} [#{eh.active_tasks.count}/#{max_tasks}]")
         end
 

@@ -19,9 +19,7 @@ class VmOrTemplate < ApplicationRecord
   attr_accessor :surrogate_host
   @surrogate_host = nil
 
-  include SerializedEmsRefObjMixin
   include ProviderObjectMixin
-
   include ComplianceMixin
   include OwnershipMixin
   include CustomAttributeMixin
@@ -154,9 +152,6 @@ class VmOrTemplate < ApplicationRecord
   virtual_column :hostnames,                            :type => :string_set, :uses => {:hardware => :hostnames}
   virtual_column :mac_addresses,                        :type => :string_set, :uses => {:hardware => :mac_addresses}
   virtual_column :memory_exceeds_current_host_headroom, :type => :string,     :uses => [:mem_cpu, {:host => [:hardware, :ext_management_system]}]
-  virtual_column :num_hard_disks,                       :type => :integer,    :uses => {:hardware => :hard_disks}
-  virtual_column :num_disks,                            :type => :integer,    :uses => {:hardware => :disks}
-  virtual_column :num_cpu,                              :type => :integer,    :uses => :hardware
   virtual_column :has_rdm_disk,                         :type => :boolean,    :uses => {:hardware => :disks}
   virtual_column :disks_aligned,                        :type => :string,     :uses => {:hardware => {:hard_disks => :partitions_aligned}}
 
@@ -176,6 +171,7 @@ class VmOrTemplate < ApplicationRecord
   virtual_delegate :name, :to => :ems_cluster, :prefix => true, :allow_nil => true, :type => :string
   virtual_delegate :vmm_product, :to => :host, :prefix => :v_host, :allow_nil => true, :type => :string
   virtual_delegate :v_pct_free_disk_space, :v_pct_used_disk_space, :to => :hardware, :allow_nil => true, :type => :float
+  virtual_delegate :num_cpu, :to => "hardware.cpu_sockets", :allow_nil => true, :default => 0, :type => :integer
   virtual_delegate :cpu_total_cores, :cpu_cores_per_socket, :to => :hardware, :allow_nil => true, :default => 0, :type => :integer
   virtual_delegate :annotation, :to => :hardware, :prefix => "v", :allow_nil => true, :type => :string
   virtual_delegate :ram_size_in_bytes,                  :to => :hardware, :allow_nil => true, :default => 0, :type => :integer
@@ -183,6 +179,7 @@ class VmOrTemplate < ApplicationRecord
   virtual_delegate :ram_size,                           :to => "hardware.memory_mb", :allow_nil => true, :default => 0, :type => :integer
 
   delegate :connect_lans, :disconnect_lans, :to => :hardware, :allow_nil => true
+  delegate :queue_name_for_ems_operations, :to => :ext_management_system, :allow_nil => true
 
   after_save :save_genealogy_information
 
@@ -319,15 +316,6 @@ class VmOrTemplate < ApplicationRecord
     current_state == 'terminated'
   end
 
-  def raw_set_custom_field(attribute, value)
-    raise _("VM has no EMS, unable to set custom attribute") unless ext_management_system
-    run_command_via_parent(:vm_set_custom_field, :attribute => attribute, :value => value)
-  end
-
-  def set_custom_field(attribute, value)
-    raw_set_custom_field(attribute, value)
-  end
-
   def makesmart(_options = {})
     self.smart = true
     save
@@ -345,6 +333,15 @@ class VmOrTemplate < ApplicationRecord
     _log.info("Invoking [#{verb}] through EMS: [#{ext_management_system.name}]")
     options = {:user_event => "Console Request Action [#{verb}], VM [#{name}]"}.merge(options)
     ext_management_system.send(verb, self, options)
+  end
+
+  def run_command_via_task(task_options, queue_options)
+    MiqTask.generic_action_with_callback(task_options, command_queue_options(queue_options))
+  end
+
+  def run_command_via_queue(method_name, queue_options = {})
+    queue_options[:method_name] = method_name
+    MiqQueue.put(command_queue_options(queue_options))
   end
 
   # keep the same method signature as others in retirement mixin
@@ -964,19 +961,6 @@ class VmOrTemplate < ApplicationRecord
     "#{object.class.name}:#{object.id}-#{object.name}:#{object.try(:state)}"
   end
 
-  def storage2hosts
-    hosts = storage.hosts.to_a if storage
-    hosts = [myhost] if hosts.blank?
-    return hosts unless host
-
-    # VMware needs a VMware host to resolve datastore names
-    if vendor == 'vmware'
-      hosts.delete_if { |h| !h.is_vmware? }
-    end
-
-    hosts
-  end
-
   def storage2proxies
     @storage_proxies ||= begin
       # Support vixDisk scanning of VMware VMs from the vmdb server
@@ -1544,6 +1528,8 @@ class VmOrTemplate < ApplicationRecord
                    :to => :hardware, :allow_nil => true, :uses => {:hardware => :disks}, :type => :integer
 
   virtual_delegate :provisioned_storage, :to => :hardware, :allow_nil => true, :default => 0, :type => :integer
+  virtual_delegate :num_disks, :to => :hardware, :allow_nil => true, :default => 0, :type => :integer, :uses => {:hardware => :disks}
+  virtual_delegate :num_hard_disks, :to => :hardware, :allow_nil => true, :default => 0, :type => :integer, :uses => {:hardware => :hard_disks}
 
   def used_storage
     used_disk_storage.to_i + ram_size_in_bytes
@@ -1567,18 +1553,6 @@ class VmOrTemplate < ApplicationRecord
 
   def ram_size_in_bytes_by_state
     ram_size_by_state * 1.megabyte
-  end
-
-  def num_cpu
-    hardware.try(:cpu_sockets) || 0
-  end
-
-  def num_disks
-    hardware.nil? ? 0 : hardware.disks.size
-  end
-
-  def num_hard_disks
-    hardware.nil? ? 0 : hardware.hard_disks.size
   end
 
   def has_rdm_disk
@@ -1863,6 +1837,16 @@ class VmOrTemplate < ApplicationRecord
       :subject => self,
       :options => options
     )
+  end
+
+  def command_queue_options(queue_options)
+    {
+      :class_name  => self.class.name,
+      :instance_id => id,
+      :role        => "ems_operations",
+      :queue_name  => queue_name_for_ems_operations,
+      :zone        => my_zone,
+    }.merge(queue_options)
   end
 
   # this is verbose, helper for generating arel
