@@ -1,4 +1,4 @@
-describe "Widget Chart Content" do
+RSpec.describe "Widget Chart Content" do
   let(:widget) { MiqWidget.find_by(:description => "chart_vendor_and_guest_os") }
   before do
     _guid, _server, _zone = EvmSpecHelper.create_guid_miq_server_zone
@@ -60,6 +60,6 @@ describe "Widget Chart Content" do
 
   it '#generate returns valid data' do
     content = widget.generate_one_content_for_user(@group, @user)
-    expect(Charting.data_ok? content.contents).to eq(true)
+    expect(ManageIQ::Reporting::Charting.data_ok? content.contents).to eq(true)
   end
 end

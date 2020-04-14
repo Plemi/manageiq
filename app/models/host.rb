@@ -39,10 +39,13 @@ class Host < ApplicationRecord
   has_many                  :storages, :through => :host_storages
   has_many                  :writable_accessible_host_storages, -> { writable_accessible }, :class_name => "HostStorage"
   has_many                  :writable_accessible_storages, :through => :writable_accessible_host_storages, :source => :storage
+
   has_many                  :host_virtual_switches, :class_name => "Switch", :dependent => :destroy, :inverse_of => :host
   has_many                  :host_switches, :dependent => :destroy
   has_many                  :switches, :through => :host_switches
   has_many                  :lans,     :through => :switches
+  has_many                  :host_virtual_lans, :through => :host_virtual_switches, :source => :lans
+
   has_many                  :subnets,  :through => :lans
   has_many                  :networks, :through => :hardware
   has_many                  :patches, :dependent => :destroy
@@ -143,6 +146,9 @@ class Host < ApplicationRecord
   virtual_total :v_total_vms, :vms
   virtual_total :v_total_miq_templates, :miq_templates
 
+  scope :active,   -> { where.not(:ems_id => nil) }
+  scope :archived, -> { where(:ems_id => nil) }
+
   alias_method :datastores, :storages    # Used by web-services to return datastores as the property name
 
   alias_method :parent_cluster, :ems_cluster
@@ -153,6 +159,8 @@ class Host < ApplicationRecord
 
   include DriftStateMixin
   virtual_delegate :last_scan_on, :to => "last_drift_state_timestamp_rec.timestamp", :allow_nil => true, :type => :datetime
+
+  delegate :queue_name_for_ems_operations, :to => :ext_management_system, :allow_nil => true
 
   include UuidMixin
   include MiqPolicyMixin
@@ -690,7 +698,7 @@ class Host < ApplicationRecord
   # Parent relationship methods
   def parent_folder
     p = parent
-    p.kind_of?(EmsFolder) ? p : nil
+    p if p.kind_of?(EmsFolder)
   end
 
   def owning_folder
@@ -735,6 +743,31 @@ class Host < ApplicationRecord
     errors.empty? ? true : errors
   end
 
+  def verify_credentials_task(userid, auth_type = nil, options = {})
+    task_opts = {
+      :action => "Verify Host Credentials",
+      :userid => userid
+    }
+
+    queue_opts = {
+      :args        => [auth_type, options],
+      :class_name  => self.class.name,
+      :instance_id => id,
+      :method_name => "verify_credentials?",
+      :queue_name  => queue_name_for_ems_operations,
+      :role        => "ems_operations",
+      :zone        => my_zone
+    }
+
+    MiqTask.generic_action_with_callback(task_opts, queue_opts)
+  end
+
+  def verify_credentials?(*args)
+    # Prevent the connection details, including the password, from being leaked into the logs
+    # and MiqQueue by only returning true/false
+    !!verify_credentials(*args)
+  end
+
   def verify_credentials(auth_type = nil, options = {})
     raise MiqException::MiqHostError, _("No credentials defined") if missing_credentials?(auth_type)
     if auth_type.to_s != 'ipmi' && os_image_name !~ /linux_*/
@@ -766,9 +799,9 @@ class Host < ApplicationRecord
       # connect_ssh logs address and user name(s) being used to make connection
       _log.info("Verifying Host SSH credentials for [#{name}]")
       connect_ssh(options) { |ssu| ssu.exec("uname -a") }
-    rescue MiqException::MiqInvalidCredentialsError
-      raise MiqException::MiqInvalidCredentialsError, _("Login failed due to a bad username or password.")
-    rescue MiqException::MiqSshUtilHostKeyMismatch
+    rescue Net::SSH::AuthenticationFailed => err
+      raise err, _("Login failed due to a bad username or password.")
+    rescue Net::SSH::HostKeyMismatch
       raise # Re-raise the error so the UI can prompt the user to allow the keys to be reset.
     rescue Exception => err
       _log.warn(err.inspect)
@@ -1025,7 +1058,7 @@ class Host < ApplicationRecord
   end
 
   def connect_ssh(options = {})
-    require 'MiqSshUtil'
+    require 'manageiq-ssh-util'
 
     rl_user, rl_password, su_user, su_password, additional_options = ssh_users_and_passwords
     options.merge!(additional_options)
@@ -1040,7 +1073,7 @@ class Host < ApplicationRecord
 
     _log.info("Initiating SSH connection to Host:[#{name}] using [#{hostname}] for user:[#{users}].  Options:[#{logged_options.inspect}]")
     begin
-      MiqSshUtil.shell_with_su(hostname, rl_user, rl_password, su_user, su_password, options) do |ssu, _shell|
+      ManageIQ::SSH::Util.shell_with_su(hostname, rl_user, rl_password, su_user, su_password, options) do |ssu, _shell|
         _log.info("SSH connection established to [#{hostname}]")
         yield(ssu)
       end
@@ -1286,6 +1319,8 @@ class Host < ApplicationRecord
       :method_name  => "scan_from_queue",
       :miq_callback => cb,
       :msg_timeout  => timeout,
+      :role         => "ems_operations",
+      :queue_name   => queue_name_for_ems_operations,
       :zone         => my_zone
     )
   end
@@ -1375,7 +1410,7 @@ class Host < ApplicationRecord
 
             save
           end
-        rescue MiqException::MiqSshUtilHostKeyMismatch
+        rescue Net::SSH::HostKeyMismatch
           # Keep from dumping stack trace for this error which is sufficiently logged in the connect_ssh method
         rescue => err
           _log.log_backtrace(err)
@@ -1718,30 +1753,6 @@ class Host < ApplicationRecord
     !plist.blank?
   end
 
-  cache_with_timeout(:node_types) do # TODO: This doesn't belong here
-    if !openstack_hosts_exists?
-      :non_openstack
-    elsif non_openstack_hosts_exists?
-      :mixed_hosts
-    else
-      :openstack
-    end
-  end
-
-  def self.openstack_hosts_exists? # TODO: This doesn't belong here
-    ems = ManageIQ::Providers::Openstack::InfraManager.pluck(:id)
-    ems.empty? ? false : Host.where(:ems_id => ems).exists?
-  end
-
-  def self.non_openstack_hosts_exists? # TODO: This doesn't belong here
-    ems = ManageIQ::Providers::Openstack::InfraManager.pluck(:id)
-    Host.where.not(:ems_id => ems).exists?
-  end
-
-  def openstack_host? # TODO: This doesn't belong here
-    ext_management_system.class == ManageIQ::Providers::Openstack::InfraManager
-  end
-
   def writable_storages
     if host_storages.loaded? && host_storages.all? { |hs| hs.association(:storage).loaded? }
       host_storages.reject(&:read_only).map(&:storage)
@@ -1774,6 +1785,6 @@ class Host < ApplicationRecord
   end
 
   def self.display_name(number = 1)
-    n_('Host / Node', 'Hosts / Nodes', number)
+    n_('Host', 'Hosts', number)
   end
 end

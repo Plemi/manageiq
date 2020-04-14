@@ -1,4 +1,4 @@
-describe ServiceOrder do
+RSpec.describe ServiceOrder do
   def create_request
     FactoryBot.create(:service_template_provision_request,
                        :process   => false,
@@ -11,9 +11,10 @@ describe ServiceOrder do
   let(:request2)      { create_request }
   let(:request3)      { create_request }
   let(:service_order) do
-    FactoryBot.create(:service_order, :state  => ServiceOrder::STATE_CART,
-                                       :user   => user,
-                                       :tenant => tenant)
+    FactoryBot.create(:service_order_cart,
+                      :state  => ServiceOrder::STATE_CART,
+                      :user   => user,
+                      :tenant => tenant)
   end
   let(:tenant) { Tenant.seed }
 
@@ -101,7 +102,7 @@ describe ServiceOrder do
   it "only allows one cart per user, tenant" do
     service_order
     expect do
-      ServiceOrder.create!(:state => ServiceOrder::STATE_CART, :user => user, :tenant => tenant)
+      ServiceOrderCart.create!(:state => ServiceOrder::STATE_CART, :user => user, :tenant => tenant)
     end.to raise_error(ActiveRecord::RecordInvalid, /State has already been taken/)
   end
 

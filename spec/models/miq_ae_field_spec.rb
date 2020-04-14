@@ -1,4 +1,4 @@
-describe MiqAeField do
+RSpec.describe MiqAeField do
   describe "#to_export_xml" do
     let(:default_value) { nil }
     let(:miq_ae_field) do
@@ -41,7 +41,8 @@ describe MiqAeField do
 
   context "legacy tests" do
     before do
-      @c1 = MiqAeClass.create(:namespace => "TEST", :name => "fields_test")
+      @ns = FactoryBot.create(:miq_ae_namespace, :name => "TEST", :parent => FactoryBot.create(:miq_ae_domain))
+      @c1 = MiqAeClass.create(:namespace_id => @ns.id, :name => "fields_test")
       @user = FactoryBot.create(:user_with_group)
     end
 

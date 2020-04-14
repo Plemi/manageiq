@@ -1,7 +1,7 @@
 require "dialog_field_importer"
 require "dialog_import_validator"
 
-describe DialogImportService do
+RSpec.describe DialogImportService do
   let(:dialog_import_service) { described_class.new(dialog_field_importer, dialog_import_validator) }
   let(:dialog_field_importer) { double("DialogFieldImporter") }
   let(:dialog_import_validator) { double("DialogImportValidator") }
@@ -517,6 +517,9 @@ describe DialogImportService do
       expect do
         dialog_import_service.import(dialogs.first)
       end.to raise_error(ActiveRecord::RecordInvalid, /Validation failed: Dialog: Name is not unique within region/)
+        .and change { DialogTab.count }.by(0)
+                                       .and change { DialogGroup.count }.by(0)
+                                                                        .and change { DialogField.count }.by(0)
     end
   end
 

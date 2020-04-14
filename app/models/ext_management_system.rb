@@ -17,22 +17,17 @@ class ExtManagementSystem < ApplicationRecord
     supported_subclasses.collect(&:ems_type)
   end
 
-  def self.leaf_subclasses
-    descendants.select { |d| d.subclasses.empty? }
+  def self.supported_subclasses
+    leaf_subclasses.select(&:permitted?)
   end
 
-  def self.supported_subclasses
-    subclasses.flat_map do |s|
-      s.subclasses.empty? ? s : s.supported_subclasses
-    end
+  def self.permitted?
+    Vmdb::PermissionStores.instance.supported_ems_type?(ems_type)
   end
+  delegate :permitted?, :to => :class
 
   def self.supported_types_and_descriptions_hash
-    supported_subclasses.each_with_object({}) do |klass, hash|
-      if Vmdb::PermissionStores.instance.supported_ems_type?(klass.ems_type)
-        hash[klass.ems_type] = klass.description
-      end
-    end
+    supported_subclasses.each_with_object({}) { |klass, hash| hash[klass.ems_type] = klass.description }
   end
 
   def self.api_allowed_attributes
@@ -40,11 +35,19 @@ class ExtManagementSystem < ApplicationRecord
   end
 
   def self.supported_types_for_create
-    leaf_subclasses.select(&:supported_for_create?)
+    supported_subclasses.select(&:supported_for_create?)
+  end
+
+  def self.supported_types_for_catalog
+    supported_subclasses.select(&:supported_for_catalog?)
   end
 
   def self.supported_for_create?
     !reflections.include?("parent_manager")
+  end
+
+  def self.supported_for_catalog?
+    catalog_types.present?
   end
 
   def self.provider_create_params
@@ -114,6 +117,8 @@ class ExtManagementSystem < ApplicationRecord
 
   validates :name,     :presence => true, :uniqueness => {:scope => [:tenant_id]}
   validates :hostname, :presence => true, :if => :hostname_required?
+  validates :zone,     :presence => true
+
   validate :hostname_uniqueness_valid?, :hostname_format_valid?, :if => :hostname_required?
   validate :validate_ems_enabled_when_zone_changed?, :validate_zone_not_maintenance_when_ems_enabled?
   validate :validate_ems_type, :on => :create
@@ -327,6 +332,12 @@ class ExtManagementSystem < ApplicationRecord
     !!raw_connect(*params)
   end
 
+  # Interface method that should be defined within the EMS of the provider.
+  #
+  def self.raw_connect(*_args)
+    raise NotImplementedError, _("must be implemented in a subclass")
+  end
+
   def self.model_name_from_emstype(emstype)
     model_from_emstype(emstype).try(:name)
   end
@@ -520,9 +531,6 @@ class ExtManagementSystem < ApplicationRecord
 
   def self.refresh_ems(ems_ids, reload = false)
     ems_ids = [ems_ids] unless ems_ids.kind_of?(Array)
-
-    ExtManagementSystem.where(:id => ems_ids).each { |ems| ems.reset_vim_cache_queue if ems.respond_to?(:reset_vim_cache_queue) } if reload
-
     ems_ids = ems_ids.collect { |id| [ExtManagementSystem, id] }
     EmsRefresh.queue_refresh(ems_ids)
   end
@@ -535,6 +543,9 @@ class ExtManagementSystem < ApplicationRecord
     end
   end
 
+  # Queue an EMS refresh using +opts+. Credentials must exist, and the
+  # authentication status must be ok, otherwise an error is raised.
+  #
   def refresh_ems(opts = {})
     if missing_credentials?
       raise _("no Provider credentials defined")
@@ -543,6 +554,18 @@ class ExtManagementSystem < ApplicationRecord
       raise _("Provider failed last authentication check")
     end
     EmsRefresh.queue_refresh(self, nil, opts)
+  end
+
+  alias queue_refresh refresh_ems
+
+  # Execute an EMS refresh immediately. Credentials must exist, and the
+  # authentication status must be ok, otherwise an error is raised.
+  #
+  def refresh
+    raise _("no Provider credentials defined") if missing_credentials?
+    raise _("Provider failed last authentication check") unless authentication_status_ok?
+
+    EmsRefresh.refresh(self)
   end
 
   def self.ems_infra_discovery_types
@@ -575,11 +598,11 @@ class ExtManagementSystem < ApplicationRecord
   def destroy(task_id = nil)
     disable!(:validate => false) if enabled?
 
-    _log.info("Destroying #{child_managers.count} child_managers")
-    child_managers.destroy_all
-
     # kill workers
     MiqWorker.find_alive.where(:queue_name => queue_name).each(&:kill)
+
+    _log.info("Destroying #{child_managers.count} child_managers")
+    child_managers.destroy_all
 
     super().tap do
       if task_id
@@ -839,10 +862,6 @@ class ExtManagementSystem < ApplicationRecord
 
   def self.display_name(number = 1)
     n_('Manager', 'Managers', number)
-  end
-
-  def inventory_object_refresh?
-    Settings.ems_refresh.fetch_path(emstype, :inventory_object_refresh)
   end
 
   def allow_targeted_refresh?

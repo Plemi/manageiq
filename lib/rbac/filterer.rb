@@ -1,4 +1,6 @@
 module Rbac
+  class PolymorphicError < ArgumentError; end
+
   class Filterer
     # This list is used to detemine whether RBAC, based on assigned tags, should be applied for a class in a search that is based on the class.
     # Classes should be added to this list ONLY after:
@@ -38,6 +40,7 @@ module Rbac
       FloatingIp
       Host
       HostAggregate
+      IsoImage
       Lan
       MiddlewareDatasource
       MiddlewareDeployment
@@ -50,6 +53,9 @@ module Rbac
       NetworkRouter
       OrchestrationStack
       OrchestrationTemplate
+      PhysicalServer
+      PxeImage
+      PxeServer
       ResourcePool
       SecurityGroup
       Service
@@ -57,6 +63,7 @@ module Rbac
       Storage
       Switch
       VmOrTemplate
+      WindowsImage
     )
 
     TAGGABLE_FILTER_CLASSES = CLASSES_THAT_PARTICIPATE_IN_RBAC - %w(EmsFolder MiqRequest) + %w(MiqGroup User Tenant)
@@ -314,6 +321,8 @@ module Rbac
       attrs[:auth_count] = auth_count unless options[:skip_counts]
 
       return targets, attrs
+    rescue ActiveRecord::EagerLoadPolymorphicError
+      raise Rbac::PolymorphicError
     end
 
     def is_sti?(klass)
@@ -405,7 +414,7 @@ module Rbac
     # the associated application model.  See #rbac_class method
     #
     def apply_rbac_through_association?(klass)
-      klass != VimPerformanceDaily && (klass < MetricRollup || klass < Metric)
+      klass != VimPerformanceDaily && klass != VimPerformanceTag && (klass < MetricRollup || klass < Metric)
     end
 
     def rbac_base_class(klass)

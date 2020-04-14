@@ -25,22 +25,22 @@ class EmsEvent < EventStream
   end
 
   def self.add_queue(meth, ems_id, event)
-    if Settings.prototype.queue_type == 'artemis'
-      MiqQueue.artemis_client('event_handler').publish_topic(
-        :service => "events",
+    unless MiqQueue.messaging_type == "miq_queue"
+      MiqQueue.messaging_client('event_handler')&.publish_topic(
+        :service => "manageiq.ems-events",
         :sender  => ems_id,
         :event   => event[:event_type],
         :payload => event
       )
-    else
-      MiqQueue.submit_job(
-        :service     => "event",
-        :target_id   => ems_id,
-        :class_name  => "EmsEvent",
-        :method_name => meth,
-        :args        => [event],
-      )
     end
+
+    MiqQueue.submit_job(
+      :service     => "event",
+      :target_id   => ems_id,
+      :class_name  => "EmsEvent",
+      :method_name => meth,
+      :args        => [event]
+    )
   end
 
   def self.add(ems_id, event_hash)
@@ -260,7 +260,7 @@ class EmsEvent < EventStream
 
   def get_refresh_target(target_type)
     m = "#{target_type}_refresh_target"
-    self.respond_to?(m) ? send(m) : nil
+    try(m)
   end
 
   def vm_refresh_target

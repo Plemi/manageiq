@@ -1,4 +1,4 @@
-describe Rbac::Filterer do
+RSpec.describe Rbac::Filterer do
   describe "using expressions as managed filters" do
     it "supports OR conditions across categories" do
       filter = MiqExpression.new(
@@ -210,6 +210,78 @@ describe Rbac::Filterer do
         tagged_group.entitlement.set_belongsto_filters([])
         tagged_group.entitlement.set_managed_filters([["/managed/environment/prod"]])
         tagged_group.save!
+      end
+
+      context 'searching for instances of PxeImage' do
+        let!(:pxe_image) { FactoryBot.create_list(:pxe_image, 2).first }
+
+        before do
+          pxe_image.tag_with('/managed/environment/prod', :ns => '*')
+        end
+
+        it 'lists only tagged PxeImages' do
+          results = described_class.search(:class => PxeImage, :user => user).first
+          expect(results).to match_array [pxe_image]
+        end
+
+        it 'lists only all PxeImages' do
+          results = described_class.search(:class => PxeImage, :user => admin_user).first
+          expect(results).to match_array PxeImage.all
+        end
+      end
+
+      context 'searching for instances of IsoImages' do
+        let!(:iso_image) { FactoryBot.create_list(:iso_image, 2).first }
+
+        before do
+          iso_image.tag_with('/managed/environment/prod', :ns => '*')
+        end
+
+        it 'lists only tagged IsoImages' do
+          results = described_class.search(:class => IsoImage, :user => user).first
+          expect(results).to match_array [iso_image]
+        end
+
+        it 'lists only all IsoImage' do
+          results = described_class.search(:class => IsoImage, :user => admin_user).first
+          expect(results).to match_array IsoImage.all
+        end
+      end
+
+      context 'searching for instances of WindowsImages' do
+        let!(:windows_image) { FactoryBot.create_list(:windows_image, 2).first }
+
+        before do
+          windows_image.tag_with('/managed/environment/prod', :ns => '*')
+        end
+
+        it 'lists only tagged WindowsImages' do
+          results = described_class.search(:class => WindowsImage, :user => user).first
+          expect(results).to match_array [windows_image]
+        end
+
+        it 'lists only all WindowsImage' do
+          results = described_class.search(:class => WindowsImage, :user => admin_user).first
+          expect(results).to match_array WindowsImage.all
+        end
+      end
+
+      context 'searching for instances of PxeServers' do
+        let!(:pxe_server) { FactoryBot.create_list(:pxe_server, 2).first }
+
+        before do
+          pxe_server.tag_with('/managed/environment/prod', :ns => '*')
+        end
+
+        it 'lists only tagged PxeServers' do
+          results = described_class.search(:class => PxeServer, :user => user).first
+          expect(results).to match_array [pxe_server]
+        end
+
+        it 'lists only all PxeServers' do
+          results = described_class.search(:class => PxeServer, :user => admin_user).first
+          expect(results).to match_array PxeServer.all
+        end
       end
 
       context 'searching for instances of Switches' do
@@ -1047,7 +1119,7 @@ describe Rbac::Filterer do
       end
     end
 
-    context "for Metrics::Rollup" do
+    context "for polymorphic includes/references" do
       before do
         vm = FactoryBot.create(:vm_vmware)
         FactoryBot.create(
@@ -1075,20 +1147,53 @@ describe Rbac::Filterer do
           :max_disk_usage_rate_average     => {},
           :min_net_usage_rate_average      => {},
           :max_net_usage_rate_average      => {},
-          :v_derived_storage_used          => {}
+          :v_derived_storage_used          => {},
+          :resource                        => {}
         }
       end
 
       # NOTE:  Think long and hard before you consider removing this test.
       # Many-a-hours wasted here determining this bug that resulted in
       # re-adding this test again.
-      it "should not raise an error when a polymorphic reflection is included" do
-        result = nil
+      #
+      # 2nd NOTE:  I did think (and wrote the above comment as well), however,
+      # now it seems we DO NOT SUPPORT polymorphic code, since we removed it
+      # here:
+      #
+      #   https://github.com/ManageIQ/manageiq/commit/8cc2277b
+      #
+      # That said, we should make sure this is erroring and no other callers
+      # are trying to do this (example:  MiqReport), so make sure this raises
+      # an error to inform the caller that fixing needs to happen.
+      #
+      it "raises an error when a polymorphic reflection is included and referenced" do
+        # NOTE: Fails if :references is passed with a value, or with no key,
+        # which it uses :include_for_find as the default.
         expect do
-          result = described_class.search :class            => "MetricRollup",
-                                          :include_for_find => @include
+          described_class.search :class            => "MetricRollup",
+                                 :include_for_find => @include,
+                                 :references       => @include
+        end.to raise_error(Rbac::PolymorphicError)
+
+        expect do
+          described_class.search :class            => "MetricRollup",
+                                 :include_for_find => @include
+        end.to raise_error(Rbac::PolymorphicError)
+      end
+
+      it "does not raise an error when a polymorphic reflection is only included" do
+        # NOTE:  if references is passed in, but is blank, then it is fine
+        expect do
+          described_class.search :class            => "MetricRollup",
+                                 :include_for_find => @include,
+                                 :references       => {}
         end.not_to raise_error
-        expect(result.first.length).to eq(1)
+
+        expect do
+          described_class.search :class            => "MetricRollup",
+                                 :include_for_find => @include,
+                                 :references       => nil
+        end.not_to raise_error
       end
     end
   end
@@ -2240,7 +2345,7 @@ describe Rbac::Filterer do
         service2.update(:service_template => nil)
 
         # exclude service2 (no service template)
-        exp = YAML.safe_load("--- !ruby/object:MiqExpression
+        exp = YAML.load("--- !ruby/object:MiqExpression
         exp:
           and:
           - IS NOT EMPTY:
@@ -2269,7 +2374,7 @@ describe Rbac::Filterer do
         FactoryBot.create_list(:service, 1, :parent => root_service) # matches ruby and sql filter, not rbac
 
         # expression with sql AND ruby
-        exp = YAML.safe_load("--- !ruby/object:MiqExpression
+        exp = YAML.load("--- !ruby/object:MiqExpression
         exp:
           and:
           - IS NOT EMPTY:
@@ -2517,6 +2622,7 @@ describe Rbac::Filterer do
   it ".apply_rbac_through_association?" do
     expect(described_class.new.send(:apply_rbac_through_association?, HostMetric)).to be_truthy
     expect(described_class.new.send(:apply_rbac_through_association?, Vm)).not_to be
+    expect(described_class.new.send(:apply_rbac_through_association?, VimPerformanceTag)).not_to be
   end
 
   describe "find_targets_with_direct_rbac" do

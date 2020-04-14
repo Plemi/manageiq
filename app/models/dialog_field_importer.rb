@@ -34,7 +34,7 @@ class DialogFieldImporter
     elsif dialog_field_attributes["type"].nil?
       dialog_field_attributes.delete("dialog_field_responders")
       dialog_field_attributes.delete("resource_action")
-      DialogField.create(dialog_field_attributes)
+      DialogField.create!(dialog_field_attributes)
     else
       raise InvalidDialogFieldTypeError
     end
@@ -49,7 +49,7 @@ class DialogFieldImporter
   def adjust_category(opts)
     return nil if opts[:category_description].nil?
     category = find_category(opts)
-    category.try(:description) == opts[:category_description] ? category.try(:id).to_s : nil
+    category.try(:id).to_s if category.try(:description) == opts[:category_description]
   end
 
   def find_category(opts)

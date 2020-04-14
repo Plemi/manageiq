@@ -31,6 +31,11 @@ class Vm < VmOrTemplate
           _("VMRC remote console is not supported on %{vendor}.") % {:vendor => vendor})
   end
 
+  def validate_native_console_support
+    raise(MiqException::RemoteConsoleNotSupportedError,
+          _("NATIVE remote console is not supported on %{vendor}.") % {:vendor => vendor})
+  end
+
   def add_to_service(service)
     service.add_resource!(self)
   end
@@ -66,9 +71,9 @@ class Vm < VmOrTemplate
     conds[0] = "(#{conds[0].join(" AND ")})"
 
     Hardware.includes(include.uniq)
-      .references(references.uniq)
-      .where(conds)
-      .collect { |h|  h.vm_or_template.kind_of?(Vm) ? h.vm_or_template : nil }.compact
+            .references(references.uniq)
+            .where(conds)
+            .map(&:vm_or_template).select { |vm| vm.kind_of?(Vm) }
   end
 
   def running_processes
@@ -115,7 +120,8 @@ class Vm < VmOrTemplate
     {
       :html5   => html5_support,
       :vmrc    => vmrc_support,
-      :cockpit => cockpit_support
+      :cockpit => cockpit_support,
+      :native  => native_support
     }
   end
 
@@ -146,6 +152,14 @@ class Vm < VmOrTemplate
       :visible => supports_cockpit_console?,
       :enabled => supports_launch_cockpit?,
       :message => unsupported_reason(:launch_cockpit)
+    }
+  end
+
+  def native_support
+    {
+      :visible => supports_native_console?,
+      :enabled => supports_launch_native_console?,
+      :message => unsupported_reason(:launch_native_console)
     }
   end
 end

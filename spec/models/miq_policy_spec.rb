@@ -1,4 +1,4 @@
-describe MiqPolicy do
+RSpec.describe MiqPolicy do
   context "Testing edge cases on conditions" do
     # The conditions reflection on MiqPolicy is affected when called through a
     # belongs_to or has_one, which is used under the covers in MiqSet.  This
@@ -204,6 +204,15 @@ describe MiqPolicy do
         expect(prof_list.size).to eq(2)
         expect(pol_list.size).to  eq(1)
         expect(pol_list[0]).to    eq(policies[0])
+      end
+    end
+
+    describe "#miq_policies (virtual_has_many)" do
+      before { profiles }
+
+      it "gets the policies under a profile" do
+        expect(MiqPolicySet.find_by(:name => "ps3").miq_policies).to match_array([policies[0]])
+        expect(MiqPolicySet.find_by(:name => "ps4").miq_policies).to match_array([policies[1]])
       end
     end
 

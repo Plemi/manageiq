@@ -1,4 +1,4 @@
-describe Host do
+RSpec.describe Host do
   it "groups and users joins" do
     user1  = FactoryBot.create(:account_user)
     user2  = FactoryBot.create(:account_user)
@@ -194,9 +194,27 @@ describe Host do
       EvmSpecHelper.local_miq_server
 
       @password = "v2:{/OViaBJ0Ug+RSW9n7EFGqw==}"
-      @host = FactoryBot.create(:host_vmware_esx)
+      @ems = FactoryBot.create(:ems_vmware)
+      @host = FactoryBot.create(:host_vmware_esx, :ext_management_system => @ems)
       @data = {:default => {:userid => "root", :password => @password}}
       @options = {:save => false}
+    end
+
+    context "#verify_credentials_task" do
+      it "verifies the credentials" do
+        @host.update_authentication(@data, @options)
+        @host.save
+        @host.verify_credentials_task(FactoryBot.create(:user).userid)
+
+        expect(MiqQueue.last).to have_attributes(
+          :method_name => "verify_credentials?",
+          :instance_id => @host.id,
+          :class_name  => @host.class.name,
+          :role        => "ems_operations",
+          :zone        => @ems.zone.name,
+          :queue_name  => @ems.queue_name_for_ems_operations,
+        )
+      end
     end
 
     context "default credentials" do
@@ -276,34 +294,6 @@ describe Host do
     it("#enabled_inbound_ports")      { expect(subject.enabled_inbound_ports).to      match_array([1003, 1001]) }
   end
 
-  context ".node_types" do
-    it "returns :mixed_hosts when there are both openstack & non-openstack hosts in db" do
-      FactoryBot.create(:host_openstack_infra, :ext_management_system => FactoryBot.create(:ems_openstack_infra))
-      FactoryBot.create(:host_vmware_esx,      :ext_management_system => FactoryBot.create(:ems_vmware))
-
-      expect(Host.node_types).to eq(:mixed_hosts)
-    end
-
-    it "returns :openstack when there are only openstack hosts in db" do
-      FactoryBot.create(:host_openstack_infra, :ext_management_system => FactoryBot.create(:ems_openstack_infra))
-
-      expect(Host.node_types).to eq(:openstack)
-    end
-
-    it "returns :non_openstack when there are non-openstack hosts in db" do
-      FactoryBot.create(:host_vmware_esx, :ext_management_system => FactoryBot.create(:ems_vmware))
-
-      expect(Host.node_types).to eq(:non_openstack)
-    end
-  end
-
-  context "#openstack_host?" do
-    it("false") { expect(FactoryBot.build(:host).openstack_host?).to be false }
-
-    it "true" do
-      expect(FactoryBot.build(:host_openstack_infra, :ext_management_system => FactoryBot.create(:ems_openstack_infra))).to be_openstack_host
-    end
-  end
 
   def assert_default_credentials_validated
     allow(@host).to receive(:verify_credentials_with_ws)
@@ -647,33 +637,35 @@ describe Host do
   end
 
   describe "#scan_queue" do
-    let(:ems) { double("ExtManagementSystem") }
+    let(:host) { FactoryBot.create(:host_vmware, :ext_management_system => ems) }
+
     before do
       MiqRegion.seed
       Zone.seed
-
-      @host = FactoryBot.create(:host_vmware)
-      allow(@host).to receive(:ext_management_system).and_return(ems)
     end
 
-    it 'creates task with Error status when EMS paused' do
-      allow(ems).to receive_messages(:name => 'My provider',
-                                     :zone => Zone.maintenance_zone)
-      @host.scan_queue
-      task = MiqTask.first
-      expect(task.status_error?).to eq(true)
-      expect(task.message).to eq("#{ems.name} is paused")
+    context "when the EMS is paused" do
+      let(:ems) { FactoryBot.create(:ems_infra, :name => "My Provider", :zone => Zone.maintenance_zone, :enabled => false) }
+
+      it 'creates task with Error status when EMS paused' do
+        expect(MiqQueue).not_to receive(:put)
+
+        host.scan_queue
+        task = MiqTask.first
+        expect(task.status_error?).to eq(true)
+        expect(task.message).to eq("#{ems.name} is paused")
+      end
     end
 
-    it 'creates task with valid status EMS active' do
-      allow(ems).to receive_messages(:my_zone => Zone.default_zone,
-                                     :name    => 'My provider',
-                                     :zone    => Zone.default_zone)
-      allow(MiqQueue).to receive(:put).and_return(double)
+    context "when the EMS is active" do
+      let(:ems) { FactoryBot.create(:ems_infra, :name => "My Provider", :zone => Zone.default_zone) }
+      it 'creates task with valid status EMS active' do
+        allow(MiqQueue).to receive(:put).and_return(double)
 
-      @host.scan_queue
-      task = MiqTask.first
-      expect(task.status_ok?).to eq(true)
+        host.scan_queue
+        task = MiqTask.first
+        expect(task.status_ok?).to eq(true)
+      end
     end
   end
 

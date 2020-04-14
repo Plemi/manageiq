@@ -1,8 +1,8 @@
 module ManageIQ::Providers
   class CloudManager < BaseManager
     require_nested :AuthKeyPair
-    require_nested :RefreshParser
     require_nested :Template
+    require_nested :MetricsCapture
     require_nested :Provision
     require_nested :ProvisionWorkflow
     require_nested :Vm

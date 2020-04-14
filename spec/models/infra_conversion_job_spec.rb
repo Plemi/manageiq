@@ -69,7 +69,7 @@ RSpec.describe InfraConversionJob, :v2v do
   let(:transformation_plan) { ServiceTemplateTransformationPlan.create_catalog_item(transformation_plan_catalog_item_options) }
 
   let(:request)         { FactoryBot.create(:service_template_transformation_plan_request, :source => transformation_plan) }
-  let(:task)            { FactoryBot.create(:service_template_transformation_plan_task, :miq_request => request, :source => vm_vmware, :userid => user.id) }
+  let(:task)            { FactoryBot.create(:service_template_transformation_plan_task, :miq_request => request, :source => vm_vmware, :userid => user.userid) }
   let(:job_options)     { {:target_class => task.class.name, :target_id => task.id} }
   let(:job)             { described_class.create_job(job_options) }
 
@@ -463,14 +463,14 @@ RSpec.describe InfraConversionJob, :v2v do
       it 'aborts conversion if task cancel is requested' do
         task.cancel
         expect(job).to receive(:abort_conversion).once.ordered.with('Migration cancelation requested', 'ok').and_call_original
-        expect(job).to receive(:queue_signal).once.ordered.with(:abort_job, 'Migration cancelation requested', 'ok')
+        expect(job).to receive(:queue_signal).once.ordered.with(:abort_virtv2v)
         job.update_migration_task_progress(:on_entry)
       end
     end
   end
 
   context 'state transitions' do
-    %w[start start_precopying_disks poll_precopying_disks wait_for_ip_address run_migration_playbook poll_run_migration_playbook_complete shutdown_vm poll_shutdown_vm_complete transform_vm poll_transform_vm_complete poll_inventory_refresh_complete apply_right_sizing restore_vm_attributes power_on_vm poll_power_on_vm_complete mark_vm_migrated abort_virtv2v poll_automate_state_machine finish abort_job cancel error].each do |signal|
+    %w[start start_precopying_disks poll_precopying_disks pause_disks_precopy poll_pause_disks_precopy_complete wait_for_ip_address run_migration_playbook poll_run_migration_playbook_complete shutdown_vm poll_shutdown_vm_complete transform_vm poll_transform_vm_complete inventory_refresh poll_inventory_refresh_complete apply_right_sizing restore_vm_attributes power_on_vm poll_power_on_vm_complete mark_vm_migrated abort_virtv2v poll_automate_state_machine finish abort_job cancel error].each do |signal|
       shared_examples_for "allows #{signal} signal" do
         it signal.to_s do
           expect(job).to receive(signal.to_sym)
@@ -479,7 +479,7 @@ RSpec.describe InfraConversionJob, :v2v do
       end
     end
 
-    %w[start start_precopying_disks poll_precopying_disks wait_for_ip_address run_migration_playbook poll_run_migration_playbook_complete shutdown_vm poll_shutdown_vm_complete transform_vm poll_transform_vm_complete poll_inventory_refresh_complete apply_right_sizing restore_vm_attributes power_on_vm poll_power_on_vm_complete mark_vm_migrated abort_virtv2v poll_automate_state_machine].each do |signal|
+    %w[start start_precopying_disks poll_precopying_disks pause_disks_precopy poll_pause_disks_precopy_complete wait_for_ip_address run_migration_playbook poll_run_migration_playbook_complete shutdown_vm poll_shutdown_vm_complete transform_vm poll_transform_vm_complete inventory_refresh poll_inventory_refresh_complete apply_right_sizing restore_vm_attributes power_on_vm poll_power_on_vm_complete mark_vm_migrated abort_virtv2v poll_automate_state_machine].each do |signal|
       shared_examples_for "doesn't allow #{signal} signal" do
         it signal.to_s do
           expect { job.signal(signal.to_sym) }.to raise_error(RuntimeError, /#{signal} is not permitted at state #{job.state}/)
@@ -530,6 +530,8 @@ RSpec.describe InfraConversionJob, :v2v do
 
       it_behaves_like 'doesn\'t allow start signal'
       it_behaves_like 'doesn\'t allow poll_precopying_disks signal'
+      it_behaves_like 'doesn\'t allow pause_disks_precopy signal'
+      it_behaves_like 'doesn\'t allow poll_pause_disks_precopy_complete signal'
       it_behaves_like 'doesn\'t allow run_migration_playbook signal'
       it_behaves_like 'doesn\'t allow poll_run_migration_playbook_complete signal'
       it_behaves_like 'doesn\'t allow shutdown_vm signal'
@@ -551,6 +553,37 @@ RSpec.describe InfraConversionJob, :v2v do
       end
 
       it_behaves_like 'allows poll_precopying_disks signal'
+      it_behaves_like 'allows pause_disks_precopy signal'
+      it_behaves_like 'allows finish signal'
+      it_behaves_like 'allows abort_job signal'
+      it_behaves_like 'allows cancel signal'
+      it_behaves_like 'allows error signal'
+
+      it_behaves_like 'doesn\'t allow start signal'
+      it_behaves_like 'doesn\'t allow start_precopying_disks signal'
+      it_behaves_like 'doesn\'t allow poll_pause_disks_precopy_complete signal'
+      it_behaves_like 'doesn\'t allow wait_for_ip_address signal'
+      it_behaves_like 'doesn\'t allow run_migration_playbook signal'
+      it_behaves_like 'doesn\'t allow poll_run_migration_playbook_complete signal'
+      it_behaves_like 'doesn\'t allow shutdown_vm signal'
+      it_behaves_like 'doesn\'t allow poll_shutdown_vm_complete signal'
+      it_behaves_like 'doesn\'t allow transform_vm signal'
+      it_behaves_like 'doesn\'t allow poll_transform_vm_complete signal'
+      it_behaves_like 'doesn\'t allow poll_inventory_refresh_complete signal'
+      it_behaves_like 'doesn\'t allow apply_right_sizing signal'
+      it_behaves_like 'doesn\'t allow restore_vm_attributes signal'
+      it_behaves_like 'doesn\'t allow power_on_vm signal'
+      it_behaves_like 'doesn\'t allow poll_power_on_vm_complete signal'
+      it_behaves_like 'doesn\'t allow mark_vm_migrated signal'
+      it_behaves_like 'doesn\'t allow poll_automate_state_machine signal'
+    end
+
+    context 'pausing_disks_precopy' do
+      before do
+        job.state = 'pausing_disks_precopy'
+      end
+
+      it_behaves_like 'allows poll_pause_disks_precopy_complete signal'
       it_behaves_like 'allows wait_for_ip_address signal'
       it_behaves_like 'allows finish signal'
       it_behaves_like 'allows abort_job signal'
@@ -559,6 +592,8 @@ RSpec.describe InfraConversionJob, :v2v do
 
       it_behaves_like 'doesn\'t allow start signal'
       it_behaves_like 'doesn\'t allow start_precopying_disks signal'
+      it_behaves_like 'doesn\'t allow poll_precopying_disks signal'
+      it_behaves_like 'doesn\'t allow pause_disks_precopy signal'
       it_behaves_like 'doesn\'t allow run_migration_playbook signal'
       it_behaves_like 'doesn\'t allow poll_run_migration_playbook_complete signal'
       it_behaves_like 'doesn\'t allow shutdown_vm signal'
@@ -589,6 +624,8 @@ RSpec.describe InfraConversionJob, :v2v do
       it_behaves_like 'doesn\'t allow start signal'
       it_behaves_like 'doesn\'t allow start_precopying_disks signal'
       it_behaves_like 'doesn\'t allow poll_precopying_disks signal'
+      it_behaves_like 'doesn\'t allow pause_disks_precopy signal'
+      it_behaves_like 'doesn\'t allow poll_pause_disks_precopy_complete signal'
       it_behaves_like 'doesn\'t allow poll_run_migration_playbook_complete signal'
       it_behaves_like 'doesn\'t allow shutdown_vm signal'
       it_behaves_like 'doesn\'t allow poll_shutdown_vm_complete signal'
@@ -619,6 +656,8 @@ RSpec.describe InfraConversionJob, :v2v do
       it_behaves_like 'doesn\'t allow start signal'
       it_behaves_like 'doesn\'t allow start_precopying_disks signal'
       it_behaves_like 'doesn\'t allow poll_precopying_disks signal'
+      it_behaves_like 'doesn\'t allow pause_disks_precopy signal'
+      it_behaves_like 'doesn\'t allow poll_pause_disks_precopy_complete signal'
       it_behaves_like 'doesn\'t allow wait_for_ip_address signal'
       it_behaves_like 'doesn\'t allow run_migration_playbook signal'
       it_behaves_like 'doesn\'t allow poll_shutdown_vm_complete signal'
@@ -646,6 +685,8 @@ RSpec.describe InfraConversionJob, :v2v do
       it_behaves_like 'doesn\'t allow start signal'
       it_behaves_like 'doesn\'t allow start_precopying_disks signal'
       it_behaves_like 'doesn\'t allow poll_precopying_disks signal'
+      it_behaves_like 'doesn\'t allow pause_disks_precopy signal'
+      it_behaves_like 'doesn\'t allow poll_pause_disks_precopy_complete signal'
       it_behaves_like 'doesn\'t allow wait_for_ip_address signal'
       it_behaves_like 'doesn\'t allow run_migration_playbook signal'
       it_behaves_like 'doesn\'t allow poll_run_migration_playbook_complete signal'
@@ -666,7 +707,7 @@ RSpec.describe InfraConversionJob, :v2v do
       end
 
       it_behaves_like 'allows poll_transform_vm_complete signal'
-      it_behaves_like 'allows poll_inventory_refresh_complete signal'
+      it_behaves_like 'allows inventory_refresh signal'
       it_behaves_like 'allows finish signal'
       it_behaves_like 'allows abort_job signal'
       it_behaves_like 'allows cancel signal'
@@ -675,12 +716,15 @@ RSpec.describe InfraConversionJob, :v2v do
       it_behaves_like 'doesn\'t allow start signal'
       it_behaves_like 'doesn\'t allow start_precopying_disks signal'
       it_behaves_like 'doesn\'t allow poll_precopying_disks signal'
+      it_behaves_like 'doesn\'t allow pause_disks_precopy signal'
+      it_behaves_like 'doesn\'t allow poll_pause_disks_precopy_complete signal'
       it_behaves_like 'doesn\'t allow wait_for_ip_address signal'
       it_behaves_like 'doesn\'t allow run_migration_playbook signal'
       it_behaves_like 'doesn\'t allow poll_run_migration_playbook_complete signal'
       it_behaves_like 'doesn\'t allow shutdown_vm signal'
       it_behaves_like 'doesn\'t allow poll_shutdown_vm_complete signal'
       it_behaves_like 'doesn\'t allow transform_vm signal'
+      it_behaves_like 'doesn\'t allow poll_inventory_refresh_complete signal'
       it_behaves_like 'doesn\'t allow apply_right_sizing signal'
       it_behaves_like 'doesn\'t allow restore_vm_attributes signal'
       it_behaves_like 'doesn\'t allow power_on_vm signal'
@@ -704,6 +748,8 @@ RSpec.describe InfraConversionJob, :v2v do
       it_behaves_like 'doesn\'t allow start signal'
       it_behaves_like 'doesn\'t allow start_precopying_disks signal'
       it_behaves_like 'doesn\'t allow poll_precopying_disks signal'
+      it_behaves_like 'doesn\'t allow pause_disks_precopy signal'
+      it_behaves_like 'doesn\'t allow poll_pause_disks_precopy_complete signal'
       it_behaves_like 'doesn\'t allow wait_for_ip_address signal'
       it_behaves_like 'doesn\'t allow run_migration_playbook signal'
       it_behaves_like 'doesn\'t allow poll_run_migration_playbook_complete signal'
@@ -711,6 +757,7 @@ RSpec.describe InfraConversionJob, :v2v do
       it_behaves_like 'doesn\'t allow poll_shutdown_vm_complete signal'
       it_behaves_like 'doesn\'t allow transform_vm signal'
       it_behaves_like 'doesn\'t allow poll_transform_vm_complete signal'
+      it_behaves_like 'doesn\'t allow inventory_refresh signal'
       it_behaves_like 'doesn\'t allow restore_vm_attributes signal'
       it_behaves_like 'doesn\'t allow power_on_vm signal'
       it_behaves_like 'doesn\'t allow poll_power_on_vm_complete signal'
@@ -732,6 +779,8 @@ RSpec.describe InfraConversionJob, :v2v do
       it_behaves_like 'doesn\'t allow start signal'
       it_behaves_like 'doesn\'t allow start_precopying_disks signal'
       it_behaves_like 'doesn\'t allow poll_precopying_disks signal'
+      it_behaves_like 'doesn\'t allow pause_disks_precopy signal'
+      it_behaves_like 'doesn\'t allow poll_pause_disks_precopy_complete signal'
       it_behaves_like 'doesn\'t allow wait_for_ip_address signal'
       it_behaves_like 'doesn\'t allow run_migration_playbook signal'
       it_behaves_like 'doesn\'t allow poll_run_migration_playbook_complete signal'
@@ -761,6 +810,8 @@ RSpec.describe InfraConversionJob, :v2v do
       it_behaves_like 'doesn\'t allow start signal'
       it_behaves_like 'doesn\'t allow start_precopying_disks signal'
       it_behaves_like 'doesn\'t allow poll_precopying_disks signal'
+      it_behaves_like 'doesn\'t allow pause_disks_precopy signal'
+      it_behaves_like 'doesn\'t allow poll_pause_disks_precopy_complete signal'
       it_behaves_like 'doesn\'t allow wait_for_ip_address signal'
       it_behaves_like 'doesn\'t allow run_migration_playbook signal'
       it_behaves_like 'doesn\'t allow poll_run_migration_playbook_complete signal'
@@ -783,6 +834,7 @@ RSpec.describe InfraConversionJob, :v2v do
 
       it_behaves_like 'allows poll_power_on_vm_complete signal'
       it_behaves_like 'allows wait_for_ip_address signal'
+      it_behaves_like 'allows mark_vm_migrated signal'
       it_behaves_like 'allows poll_automate_state_machine signal'
       it_behaves_like 'allows finish signal'
       it_behaves_like 'allows abort_job signal'
@@ -792,6 +844,8 @@ RSpec.describe InfraConversionJob, :v2v do
       it_behaves_like 'doesn\'t allow start signal'
       it_behaves_like 'doesn\'t allow start_precopying_disks signal'
       it_behaves_like 'doesn\'t allow poll_precopying_disks signal'
+      it_behaves_like 'doesn\'t allow pause_disks_precopy signal'
+      it_behaves_like 'doesn\'t allow poll_pause_disks_precopy_complete signal'
       it_behaves_like 'doesn\'t allow run_migration_playbook signal'
       it_behaves_like 'doesn\'t allow poll_run_migration_playbook_complete signal'
       it_behaves_like 'doesn\'t allow shutdown_vm signal'
@@ -801,7 +855,6 @@ RSpec.describe InfraConversionJob, :v2v do
       it_behaves_like 'doesn\'t allow poll_inventory_refresh_complete signal'
       it_behaves_like 'doesn\'t allow apply_right_sizing signal'
       it_behaves_like 'doesn\'t allow restore_vm_attributes signal'
-      it_behaves_like 'doesn\'t allow mark_vm_migrated signal'
       it_behaves_like 'doesn\'t allow power_on_vm signal'
     end
 
@@ -819,6 +872,8 @@ RSpec.describe InfraConversionJob, :v2v do
       it_behaves_like 'doesn\'t allow start signal'
       it_behaves_like 'doesn\'t allow start_precopying_disks signal'
       it_behaves_like 'doesn\'t allow poll_precopying_disks signal'
+      it_behaves_like 'doesn\'t allow pause_disks_precopy signal'
+      it_behaves_like 'doesn\'t allow poll_pause_disks_precopy_complete signal'
       it_behaves_like 'doesn\'t allow wait_for_ip_address signal'
       it_behaves_like 'doesn\'t allow run_migration_playbook signal'
       it_behaves_like 'doesn\'t allow poll_run_migration_playbook_complete signal'
@@ -848,6 +903,8 @@ RSpec.describe InfraConversionJob, :v2v do
       it_behaves_like 'doesn\'t allow start signal'
       it_behaves_like 'doesn\'t allow start_precopying_disks signal'
       it_behaves_like 'doesn\'t allow poll_precopying_disks signal'
+      it_behaves_like 'doesn\'t allow pause_disks_precopy signal'
+      it_behaves_like 'doesn\'t allow poll_pause_disks_precopy_complete signal'
       it_behaves_like 'doesn\'t allow wait_for_ip_address signal'
       it_behaves_like 'doesn\'t allow run_migration_playbook signal'
       it_behaves_like 'doesn\'t allow poll_run_migration_playbook_complete signal'
@@ -879,6 +936,8 @@ RSpec.describe InfraConversionJob, :v2v do
       it_behaves_like 'doesn\'t allow start signal'
       it_behaves_like 'doesn\'t allow start_precopying_disks signal'
       it_behaves_like 'doesn\'t allow poll_precopying_disks signal'
+      it_behaves_like 'doesn\'t allow pause_disks_precopy signal'
+      it_behaves_like 'doesn\'t allow poll_pause_disks_precopy_complete signal'
       it_behaves_like 'doesn\'t allow wait_for_ip_address signal'
       it_behaves_like 'doesn\'t allow run_migration_playbook signal'
       it_behaves_like 'doesn\'t allow poll_run_migration_playbook_complete signal'
@@ -908,6 +967,8 @@ RSpec.describe InfraConversionJob, :v2v do
       it_behaves_like 'doesn\'t allow start signal'
       it_behaves_like 'doesn\'t allow start_precopying_disks signal'
       it_behaves_like 'doesn\'t allow poll_precopying_disks signal'
+      it_behaves_like 'doesn\'t allow pause_disks_precopy signal'
+      it_behaves_like 'doesn\'t allow poll_pause_disks_precopy_complete signal'
       it_behaves_like 'doesn\'t allow wait_for_ip_address signal'
       it_behaves_like 'doesn\'t allow run_migration_playbook signal'
       it_behaves_like 'doesn\'t allow poll_run_migration_playbook_complete signal'
@@ -983,21 +1044,76 @@ RSpec.describe InfraConversionJob, :v2v do
           request.save!
           expect(job).to receive(:update_migration_task_progress).once.ordered.with(:on_entry)
           expect(job).to receive(:update_migration_task_progress).once.ordered.with(:on_exit)
-          expect(job).to receive(:queue_signal).with(:wait_for_ip_address)
+          expect(job).to receive(:queue_signal).with(:pause_disks_precopy)
           job.signal(:poll_precopying_disks)
+        end
+      end
+    end
+
+    context '#pause_disks_precopy' do
+      before do
+        job.state = 'precopying_disks'
+      end
+
+      it 'pause disks precopy' do
+        Timecop.freeze(2019, 2, 6) do
+          expect(job).to receive(:update_migration_task_progress).once.ordered.with(:on_entry)
+          expect(job.migration_task).to receive(:pause_disks_precopy)
+          expect(job).to receive(:queue_signal).with(:poll_pause_disks_precopy_complete, :deliver_on => Time.now.utc + job.state_retry_interval)
+          job.signal(:pause_disks_precopy)
+        end
+      end
+    end
+
+    context '#poll_pause_disks_precopy_complete' do
+      before do
+        job.state = 'pausing_disks_precopy'
+        allow(job.migration_task).to receive(:get_conversion_state)
+      end
+
+      it 'abort_conversion when pausing_disks_precopy times out' do
+        job.context[:retries_pausing_disks_precopy] = 8640
+        expect(job).to receive(:abort_conversion).with('Pausing disks precopy timed out', 'error')
+        job.signal(:poll_pause_disks_precopy_complete)
+      end
+
+      it 'retries if disks precopy is not paused' do
+        Timecop.freeze(2019, 2, 6) do
+          expect(job).to receive(:update_migration_task_progress).once.ordered.with(:on_entry)
+          expect(job).to receive(:update_migration_task_progress).once.ordered.with(:on_retry)
+          expect(job).to receive(:queue_signal).with(:poll_pause_disks_precopy_complete, :deliver_on => Time.now.utc + job.state_retry_interval)
+          job.signal(:poll_pause_disks_precopy_complete)
+        end
+      end
+
+      it 'exits if disks precopy is paused' do
+        job.migration_task.update_options(:virtv2v_status => 'paused')
+        Timecop.freeze(2019, 2, 6) do
+          expect(job).to receive(:update_migration_task_progress).once.ordered.with(:on_entry)
+          expect(job).to receive(:update_migration_task_progress).once.ordered.with(:on_exit)
+          expect(job).to receive(:queue_signal).with(:wait_for_ip_address)
+          job.signal(:poll_pause_disks_precopy_complete)
         end
       end
     end
 
     context '#wait_for_ip_address' do
       before do
-        task.update_options(:migration_phase => 'pre')
+        task.update_options(:migration_phase => 'pre', :source_vm_ipaddresses => ['10.0.0.1'])
         job.state = 'started'
       end
 
       it 'abort_conversion when waiting_on_ip_address times out' do
         job.context[:retries_waiting_for_ip_address] = 240
         expect(job).to receive(:abort_conversion).with('Waiting for IP address timed out', 'error')
+        job.signal(:wait_for_ip_address)
+      end
+
+      it 'exits if no playbook is expected to run' do
+        allow(job.migration_task).to receive(:pre_ansible_playbook_service_template).and_return(nil)
+        expect(job).to receive(:update_migration_task_progress).once.ordered.with(:on_entry)
+        expect(job).to receive(:update_migration_task_progress).once.ordered.with(:on_exit)
+        expect(job).to receive(:queue_signal).with(:run_migration_playbook)
         job.signal(:wait_for_ip_address)
       end
 
@@ -1060,7 +1176,7 @@ RSpec.describe InfraConversionJob, :v2v do
               expect(job).to receive(:update_migration_task_progress).once.ordered.with(:on_exit)
               expect(job).to receive(:queue_signal).with(:poll_run_migration_playbook_complete, :deliver_on => Time.now.utc + job.state_retry_interval)
               job.signal(:run_migration_playbook)
-              service_request = ServiceTemplateProvisionRequest.find(job.context[:pre_migration_playbook_service_request_id])
+              service_request = ServiceTemplateProvisionRequest.find(task.reload.options["#{task.options[:migration_phase]}_migration_playbook_service_request_id".to_sym])
               expect(service_request).to have_attributes(
                 :description => "Provisioning Service [#{embedded_ansible_service_template.name}] from [#{embedded_ansible_service_template.name}]",
                 :state       => 'pending',
@@ -1089,14 +1205,13 @@ RSpec.describe InfraConversionJob, :v2v do
       before do
         job.state = 'running_migration_playbook'
         embedded_ansible_service = FactoryBot.create(:service_ansible_playbook)
-        FactoryBot.create(:service_template_provision_task, :miq_request => embedded_ansible_service_request, :destination => embedded_ansible_service, :userid => user.id)
+        FactoryBot.create(:service_template_provision_task, :miq_request => embedded_ansible_service_request, :destination => embedded_ansible_service, :userid => user.userid)
         FactoryBot.create(:service_resource, :resource => FactoryBot.create(:embedded_ansible_job), :service => embedded_ansible_service)
       end
 
       context "migration_phase is 'pre'" do
         before do
-          task.update_options(:migration_phase => 'pre')
-          job.context[:pre_migration_playbook_service_request_id] = embedded_ansible_service_request.id
+          task.update_options(:migration_phase => 'pre', :pre_migration_playbook_service_request_id => embedded_ansible_service_request.id)
         end
 
         it 'abort_conversion when running_migration_playbook times out' do
@@ -1134,8 +1249,7 @@ RSpec.describe InfraConversionJob, :v2v do
 
       context "migration_phase is 'post'" do
         before do
-          task.update_options(:migration_phase => 'post')
-          job.context[:post_migration_playbook_service_request_id] = embedded_ansible_service_request.id
+          task.update_options(:migration_phase => 'post', :post_migration_playbook_service_request_id => embedded_ansible_service_request.id)
         end
 
         it "exits to next state in case of success" do
@@ -1236,7 +1350,6 @@ RSpec.describe InfraConversionJob, :v2v do
           expect(job).to receive(:update_migration_task_progress).once.ordered.with(:on_entry)
           expect(job).to receive(:update_migration_task_progress).once.ordered.with(:on_exit)
           expect(job.migration_task).to receive(:run_conversion)
-          expect(job.migration_task).to receive(:cutover)
           expect(job).to receive(:queue_signal).with(:poll_transform_vm_complete, :deliver_on => Time.now.utc + job.state_retry_interval)
           job.signal(:transform_vm)
         end
@@ -1247,6 +1360,7 @@ RSpec.describe InfraConversionJob, :v2v do
         Timecop.freeze(2019, 2, 6) do
           expect(job).to receive(:update_migration_task_progress).once.ordered.with(:on_entry)
           expect(job).to receive(:update_migration_task_progress).once.ordered.with(:on_exit)
+          expect(job.migration_task).to receive(:unpause_disks_precopy)
           expect(job.migration_task).to receive(:cutover)
           expect(job).to receive(:queue_signal).with(:poll_transform_vm_complete, :deliver_on => Time.now.utc + job.state_retry_interval)
           job.signal(:transform_vm)
@@ -1276,6 +1390,7 @@ RSpec.describe InfraConversionJob, :v2v do
 
         it 'returns a message stating conversion has not started' do
           task.update_options(:virtv2v_status => 'active', :virtv2v_disks => virtv2v_disks)
+          allow(job.migration_task).to receive(:two_phase?).and_return(false)
           Timecop.freeze(2019, 2, 6) do
             expect(job).to receive(:update_migration_task_progress).once.ordered.with(:on_entry).and_call_original
             expect(job).to receive(:update_migration_task_progress).once.ordered.with(:on_retry, :message => 'Disk transformation is initializing.', :percent => 1).and_call_original
@@ -1297,8 +1412,9 @@ RSpec.describe InfraConversionJob, :v2v do
           ]
         end
 
-        it "updates message and percentage, and retries if conversion is not finished" do
+        it "updates message and percentage, and retries if conversion is one-phase and not finished" do
           task.update_options(:virtv2v_status => 'active', :virtv2v_disks => virtv2v_disks)
+          allow(job.migration_task).to receive(:two_phase?).and_return(false)
           Timecop.freeze(2019, 2, 6) do
             expect(job).to receive(:update_migration_task_progress).once.ordered.with(:on_entry).and_call_original
             expect(job).to receive(:update_migration_task_progress).once.ordered.with(:on_retry, :message => 'Converting disk 2 / 2 [43.75%].', :percent => 43.75).and_call_original
@@ -1308,6 +1424,17 @@ RSpec.describe InfraConversionJob, :v2v do
               :message => 'Converting disk 2 / 2 [43.75%].',
               :percent => 43.75
             )
+          end
+        end
+
+        it "retries if conversion is two-phase and not finished" do
+          task.update_options(:virtv2v_status => 'active', :virtv2v_disks => virtv2v_disks)
+          allow(job.migration_task).to receive(:warm_migration?).and_return(true)
+          Timecop.freeze(2019, 2, 6) do
+            expect(job).to receive(:update_migration_task_progress).once.ordered.with(:on_entry).and_call_original
+            expect(job).to receive(:update_migration_task_progress).once.ordered.with(:on_retry, :message => 'Converting disks')
+            expect(job).to receive(:queue_signal).with(:poll_transform_vm_complete, :deliver_on => Time.now.utc + job.state_retry_interval)
+            job.signal(:poll_transform_vm_complete)
           end
         end
 
@@ -1321,10 +1448,41 @@ RSpec.describe InfraConversionJob, :v2v do
           task.update_options(:virtv2v_status => 'succeeded')
           expect(job).to receive(:update_migration_task_progress).once.ordered.with(:on_entry).and_call_original
           expect(job).to receive(:update_migration_task_progress).once.ordered.with(:on_exit).and_call_original
-          expect(job).to receive(:queue_signal).with(:poll_inventory_refresh_complete)
+          expect(job).to receive(:queue_signal).with(:inventory_refresh)
           job.signal(:poll_transform_vm_complete)
           expect(task.reload.options[:progress][:states][job.state.to_sym]).to include(:percent => 100.0)
         end
+      end
+    end
+  end
+
+  context '#inventory_refresh' do
+    let(:target) { double(InventoryRefresh::TargetCollection) }
+
+    before do
+      job.state = 'transforming_vm'
+      task.update_options(:destination_vm_uuid => '01234567-89ab-cdef-0123-456789ab-cdef')
+    end
+
+    it "aborts if conversion failed" do
+      expect(job).to receive(:update_migration_task_progress).once.ordered.with(:on_entry).and_raise('Fake error message')
+      expect(job).to receive(:update_migration_task_progress).once.ordered.with(:on_error)
+      expect(job).to receive(:queue_signal).with(:poll_inventory_refresh_complete)
+      job.signal(:inventory_refresh)
+    end
+
+    it "exits after triggering targeted refresh succeeded" do
+      Timecop.freeze(2019, 2, 6) do
+        expect(job).to receive(:update_migration_task_progress).once.ordered.with(:on_entry).and_call_original
+        expect(job).to receive(:update_migration_task_progress).once.ordered.with(:on_exit).and_call_original
+        allow(InventoryRefresh::Target).to receive(:new).with(
+          :association => :vms,
+          :manager     => ems_redhat,
+          :manager_ref => {:ems_ref => '/api/vms/01234567-89ab-cdef-0123-456789ab-cdef'}
+        ).and_return(target)
+        expect(EmsRefresh).to receive(:queue_refresh).with(target)
+        expect(job).to receive(:queue_signal).with(:poll_inventory_refresh_complete, :deliver_on => Time.now.utc + job.state_retry_interval)
+        job.signal(:inventory_refresh)
       end
     end
   end
@@ -1515,9 +1673,8 @@ RSpec.describe InfraConversionJob, :v2v do
       task.update_options(:source_vm_power_state => 'off')
       expect(job).to receive(:update_migration_task_progress).once.ordered.with(:on_entry)
       expect(job).to receive(:update_migration_task_progress).once.ordered.with(:on_exit)
-      expect(job).to receive(:queue_signal).with(:poll_automate_state_machine)
+      expect(job).to receive(:queue_signal).with(:mark_vm_migrated)
       job.signal(:power_on_vm)
-      expect(task.reload.options[:workflow_runner]).to eq('automate')
     end
 
     it 'sends start request to VM if VM is off' do
@@ -1598,15 +1755,19 @@ RSpec.describe InfraConversionJob, :v2v do
       end
 
       it 'sends TERM signal and retries to virt-v2v when entering state for the first time' do
-        expect(job.migration_task).to receive(:kill_virtv2v).with('TERM')
-        expect(job).to receive(:queue_signal).with(:abort_virtv2v)
-        job.abort_virtv2v
+        Timecop.freeze(2019, 2, 6) do
+          expect(job.migration_task).to receive(:kill_virtv2v).with('TERM')
+          expect(job).to receive(:queue_signal).with(:abort_virtv2v, :deliver_on => Time.now.utc + job.state_retry_interval)
+          job.abort_virtv2v
+        end
       end
 
       it 'retries if not entering the state for the first time' do
-        job.context[:retries_aborting_virtv2v] = 1
-        expect(job).to receive(:queue_signal).with(:abort_virtv2v)
-        job.abort_virtv2v
+        Timecop.freeze(2019, 2, 6) do
+          job.context[:retries_aborting_virtv2v] = 1
+          expect(job).to receive(:queue_signal).with(:abort_virtv2v, :deliver_on => Time.now.utc + job.state_retry_interval)
+          job.abort_virtv2v
+        end
       end
     end
   end

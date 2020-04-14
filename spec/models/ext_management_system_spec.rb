@@ -1,4 +1,4 @@
-describe ExtManagementSystem do
+RSpec.describe ExtManagementSystem do
   describe ".with_tenant" do
     # tenant_root
     #   \___ tenant_eye_bee_em (service_template_eye_bee_em)
@@ -86,8 +86,16 @@ describe ExtManagementSystem do
     expect(described_class.types).to match_array(all_types_and_descriptions.keys)
   end
 
-  it ".supported_types" do
-    expect(described_class.supported_types).to match_array(all_types_and_descriptions.keys)
+  describe ".supported_types" do
+    it "with default permissions" do
+      expect(described_class.supported_types).to match_array(all_types_and_descriptions.keys)
+    end
+
+    it "with removed permissions" do
+      allow(Vmdb::PermissionStores.instance).to receive(:supported_ems_type?).and_return(true)
+      allow(Vmdb::PermissionStores.instance).to receive(:supported_ems_type?).with("vmwarews").and_return(false)
+      expect(described_class.supported_types).not_to include("vmwarews")
+    end
   end
 
   describe ".supported_types_and_descriptions_hash" do
@@ -96,9 +104,9 @@ describe ExtManagementSystem do
     end
 
     it "with removed permissions" do
-      stub_vmdb_permission_store_with_types(["ems-type:vmwarews"]) do
-        expect(described_class.supported_types_and_descriptions_hash).to_not include("vmwarews")
-      end
+      allow(Vmdb::PermissionStores.instance).to receive(:supported_ems_type?).and_return(true)
+      allow(Vmdb::PermissionStores.instance).to receive(:supported_ems_type?).with("vmwarews").and_return(false)
+      expect(described_class.supported_types_and_descriptions_hash).to_not include("vmwarews")
     end
   end
 
@@ -125,13 +133,15 @@ describe ExtManagementSystem do
     expect([v.valid?, v.emstype]).to eq([true, 'vmwarews'])
     expect([e.valid?, e.emstype]).to eq([true, 'vmwarews'])
     expect([s.valid?, s.emstype]).to eq([true, 'swift'])
-    expect { ManageIQ::Providers::BaseManager.new(:hostname => "abc", :name => "abc").validate! }.to raise_error(ActiveRecord::RecordInvalid)
-    expect { ManageIQ::Providers::InfraManager.new(:hostname => "abc", :name => "abc").validate! }.to raise_error(ActiveRecord::RecordInvalid)
-    expect { ManageIQ::Providers::CloudManager.new(:hostname => "abc", :name => "abc").validate! }.to raise_error(ActiveRecord::RecordInvalid)
-    expect { ManageIQ::Providers::AutomationManager.new(:hostname => "abc", :name => "abc").validate! }.to raise_error(ActiveRecord::RecordInvalid)
-    expect(ManageIQ::Providers::Vmware::InfraManager.new(:hostname => "abc", :name => "abc").validate!).to eq(true)
-    expect(ManageIQ::Providers::Foreman::ConfigurationManager.new(:hostname => "abc", :name => "abc").validate!).to eq(true)
-    expect(ManageIQ::Providers::Foreman::ProvisioningManager.new(:hostname => "abc", :name => "abc").validate!).to eq(true)
+    expect { ManageIQ::Providers::BaseManager.new(:hostname => "abc", :name => "abc", :zone => FactoryBot.build(:zone)).validate! }.to raise_error(ActiveRecord::RecordInvalid)
+    expect { ManageIQ::Providers::InfraManager.new(:hostname => "abc", :name => "abc", :zone => FactoryBot.build(:zone)).validate! }.to raise_error(ActiveRecord::RecordInvalid)
+    expect { ManageIQ::Providers::CloudManager.new(:hostname => "abc", :name => "abc", :zone => FactoryBot.build(:zone)).validate! }.to raise_error(ActiveRecord::RecordInvalid)
+    expect { ManageIQ::Providers::AutomationManager.new(:hostname => "abc", :name => "abc", :zone => FactoryBot.build(:zone)).validate! }.to raise_error(ActiveRecord::RecordInvalid)
+    expect(ManageIQ::Providers::Vmware::InfraManager.new(:hostname => "abc", :name => "abc", :zone => FactoryBot.build(:zone)).validate!).to eq(true)
+
+    foreman_provider = ManageIQ::Providers::Foreman::Provider.new
+    expect(ManageIQ::Providers::Foreman::ConfigurationManager.new(:provider => foreman_provider, :hostname => "abc", :name => "abc", :zone => FactoryBot.build(:zone)).validate!).to eq(true)
+    expect(ManageIQ::Providers::Foreman::ProvisioningManager.new(:provider => foreman_provider, :hostname => "abc", :name => "abc", :zone => FactoryBot.build(:zone)).validate!).to eq(true)
   end
 
   context "#ipaddress / #ipaddress=" do
@@ -307,6 +317,34 @@ describe ExtManagementSystem do
       allow(MiqServer).to receive(:my_server).and_return(@zone2.miq_servers.first)
       expect(described_class).to receive(:refresh_ems).with([@ems2.id], true)
       described_class.refresh_all_ems_timer
+    end
+  end
+
+  describe "refresh" do
+    let(:ems) { FactoryBot.create(:ext_management_system) }
+
+    it "raises an error if the authentication check fails" do
+      allow(ems).to receive(:missing_credentials?).and_return(false)
+      allow(ems).to receive(:authentication_status_ok?).and_return(false)
+
+      expect { ems.refresh }.to raise_error(RuntimeError, "Provider failed last authentication check")
+    end
+
+    it "raises an error if no provider credentials are defined" do
+      allow(ems).to receive(:authentication_status_ok?).and_return(true)
+      allow(ems).to receive(:missing_credentials?).and_return(true)
+
+      expect { ems.refresh }.to raise_error(RuntimeError, "no Provider credentials defined")
+    end
+
+    it "calls the EmsRefresh.refresh method internally" do
+      allow(ems).to receive(:missing_credentials?).and_return(false)
+      allow(ems).to receive(:authentication_status_ok?).and_return(true)
+      allow(EmsRefresh).to receive(:refresh)
+
+      ems.refresh
+
+      expect(EmsRefresh).to have_received(:refresh)
     end
   end
 
@@ -712,10 +750,15 @@ describe ExtManagementSystem do
 
   describe ".raw_connect?" do
     it "returns true if validation was successful" do
-      connection = double
-      allow(ManageIQ::Providers::Amazon::CloudManager).to receive(:raw_connect).and_return(connection)
+      allow(described_class).to receive(:raw_connect).and_return(double)
+      expect(described_class.raw_connect?).to eq(true)
+    end
+  end
 
-      expect(ManageIQ::Providers::Amazon::CloudManager.raw_connect?).to eq(true)
+  context "raw_connect" do
+    it 'defines a raw_connect method which raises an error' do
+      expect(described_class).to respond_to(:raw_connect)
+      expect { described_class.raw_connect }.to raise_error(NotImplementedError, _("must be implemented in a subclass"))
     end
   end
 

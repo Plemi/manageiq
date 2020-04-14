@@ -1,4 +1,4 @@
-describe ChargebackVm do
+RSpec.describe ChargebackVm do
   include Spec::Support::ChargebackHelper
 
   let(:admin) { FactoryBot.create(:user_admin) }
@@ -86,7 +86,7 @@ describe ChargebackVm do
       @vm1.tag_with(@tag.name, :ns => '*')
 
       @host1   = FactoryBot.create(:host, :hardware => FactoryBot.create(:hardware, :memory_mb => 8124, :cpu_total_cores => 1, :cpu_speed => 9576), :vms => [@vm1])
-      @storage = FactoryBot.create(:storage_target_vmware)
+      @storage = FactoryBot.create(:storage_vmware)
       @host1.storages << @storage
 
       @ems_cluster = FactoryBot.create(:ems_cluster, :ext_management_system => ems)
