@@ -10,17 +10,26 @@ class InfraConversionThrottler
       _log.debug("-- Currently running jobs in EMS: #{running}")
       slots = (ems.miq_custom_get('MaxTransformationRunners') || Settings.transformation.limits.max_concurrent_tasks_per_ems).to_i - running
 
-      if slots <= 0
-        _log.debug("-- No available slot in EMS. Stopping.")
-        next
-      end
-      _log.debug("-- Available slots in EMS: #{slots}")
-
       jobs.each do |job|
         vm_name = job.migration_task.source.name
+
+        preflight_check = job.migration_task.preflight_check
+        if preflight_check[:status] == 'Error'
+          _log.error("Preflight check for #{vm_name} has failed. Discarding.")
+          job.abort_conversion(preflight_check[:message], 'error')
+          next
+        end
+
+        if slots <= 0
+          _log.debug("-- No available slot in EMS. Skipping.")
+          next
+        end
+        _log.debug("-- Available slots in EMS: #{slots}")
         _log.debug("- Looking for a conversion host for task for #{vm_name}")
 
-        eligible_hosts = ems.conversion_hosts.select(&:eligible?).sort_by { |ch| ch.active_tasks.count }
+        eligibility = job.migration_task.warm_migration? ? :warm_migration_eligible? : :eligible?
+        eligible_hosts = ems.conversion_hosts.select(&eligibility).sort_by { |ch| ch.active_tasks.count }
+
         if eligible_hosts.empty?
           _log.debug("-- No eligible conversion host for task for '#{vm_name}'")
           break
@@ -53,7 +62,7 @@ class InfraConversionThrottler
 
   # @return [Hash] the list of jobs in state 'running', grouped by conversion host
   def self.running_conversion_jobs
-    running = InfraConversionJob.where(:state => 'running')
+    running = InfraConversionJob.where.not(:state => ['waiting_to_start', 'finished'])
     _log.info("Running InfraConversionJob: #{running.count}")
     running.group_by { |job| job.migration_task.conversion_host }
   end

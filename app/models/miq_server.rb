@@ -639,4 +639,12 @@ class MiqServer < ApplicationRecord
   def self.display_name(number = 1)
     n_('Server', 'Servers', number)
   end
+
+  def self.audit_managed_resources
+    total_vms   = VmOrTemplate.active.count
+    total_hosts = Host.active.count
+
+    totals = {"vms" => total_vms, "hosts" => total_hosts}
+    $audit_log.info("Under Management: #{totals.to_json}")
+  end
 end # class MiqServer

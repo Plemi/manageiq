@@ -187,6 +187,7 @@ describe ServiceOrchestration do
           :orchestration_manager_id  => manager_by_dialog.id,
           :stack_name                => service_with_dialog_options.stack_name,
           :orchestration_template_id => template_by_dialog.id,
+          :execution_ttl             => 10,
           :zone                      => service_with_dialog_options.my_zone
         )
         expect(options[:create_options]).to include(
@@ -199,7 +200,16 @@ describe ServiceOrchestration do
           :timeout_in_minutes => 30
         )
       end.and_return(job)
+
+      service_with_dialog_options.options[:execution_ttl] = 10
       service_with_dialog_options.deploy_orchestration_stack
+    end
+
+    it 'raises runtime error when job finishes with pre-existing stack' do
+      job = double(:job, :id => 1, :status => 'error', :orchestration_stack => nil)
+      allow(job).to receive(:signal).with(:start)
+      allow(ManageIQ::Providers::CloudManager::OrchestrationTemplateRunner).to receive(:create_job).and_return(job)
+      expect { service_with_dialog_options.deploy_orchestration_stack }.to raise_error(RuntimeError, /Orchestration template runner finished with error/)
     end
   end
 
@@ -228,9 +238,11 @@ describe ServiceOrchestration do
         expect(options).to include(
           :orchestration_stack_id    => @stack.id,
           :orchestration_template_id => template_by_setter.id,
+          :execution_ttl             => 10,
           :zone                      => reconfigurable_service.my_zone
         )
       end.and_return(job)
+      reconfigurable_service.options[:reconfigure_automate_timeout] = 10
       reconfigurable_service.update_orchestration_stack
     end
   end

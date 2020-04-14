@@ -16,6 +16,10 @@ class MiqScheduleWorker::Jobs
     queue_work(:class_name  => "MiqWorker", :method_name => "log_status_all", :task_id => "log_status", :server_guid => MiqServer.my_guid, :priority => MiqQueue::HIGH_PRIORITY)
   end
 
+  def miq_server_audit_managed_resources
+    queue_work(:class_name  => "MiqServer", :method_name => "audit_managed_resources", :task_id => "audit_managed_resources", :server_guid => MiqServer.my_guid)
+  end
+
   def vmdb_database_connection_log_statistics
     queue_work(:class_name  => "VmdbDatabaseConnection", :method_name => "log_statistics", :server_guid => MiqServer.my_guid)
   end
@@ -30,6 +34,7 @@ class MiqScheduleWorker::Jobs
 
   def retirement_check
     queue_work_on_each_zone(:class_name => 'RetirementManager', :method_name => 'check')
+    queue_work(:class_name => 'RetirementManager', :method_name => 'check_per_region', :zone => nil)
   end
 
   def host_authentication_check_schedule
@@ -105,6 +110,10 @@ class MiqScheduleWorker::Jobs
 
   def policy_event_purge_timer
     queue_work(:class_name => "PolicyEvent", :method_name => "purge_timer", :zone => nil)
+  end
+
+  def compliance_purge_timer
+    queue_work(:class_name => "Compliance", :method_name => "purge_timer", :zone => nil)
   end
 
   def miq_report_result_purge_timer

@@ -64,8 +64,11 @@ class VmOrTemplate < ApplicationRecord
   has_one                   :operating_system, :dependent => :destroy
   has_one                   :hardware, :dependent => :destroy
   has_many                  :disks, :through => :hardware
+  has_many                  :networks, :through => :hardware
+  has_many                  :nics, :through => :hardware
   belongs_to                :host
   belongs_to                :ems_cluster
+  belongs_to                :cloud_tenant
   belongs_to                :flavor
 
   belongs_to                :storage
@@ -354,6 +357,29 @@ class VmOrTemplate < ApplicationRecord
     _log.info("Invoking [#{verb}] through EMS: [#{ext_management_system.name}]")
     options = {:user_event => "Console Request Action [#{verb}], VM [#{name}]"}.merge(options)
     ext_management_system.send(verb, self, options)
+  end
+
+  def make_retire_request(requester_id)
+    self.class.make_retire_request(id, User.find(requester_id))
+  end
+
+  # keep the same method signature as others in retirement mixin
+  def self.make_retire_request(*src_ids, requester, initiated_by: 'user')
+    vms = where(:id => src_ids)
+
+    missing_ids = src_ids - vms.pluck(:id)
+    _log.error("Retirement of [Vm] IDs: [#{missing_ids.join(', ')}] skipped - target(s) does not exist") if missing_ids.present?
+
+    vms.each do |target|
+      target.check_policy_prevent('request_vm_retire', "retire_request_after_policy_check", requester.userid, :initiated_by => initiated_by)
+    end
+  end
+
+  def retire_request_after_policy_check(userid, initiated_by: 'user')
+    options = {:src_ids => [id], :__initiated_by__ => initiated_by, :__request_type__ => VmRetireRequest.request_types.first}
+    requester = User.find_by(:userid => userid)
+    self.class.set_retirement_requester(options[:src_ids], requester)
+    VmRetireRequest.make_request(nil, options, requester)
   end
 
   # policy_event: the event sent to automate for policy resolution

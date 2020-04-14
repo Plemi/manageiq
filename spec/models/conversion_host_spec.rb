@@ -30,18 +30,34 @@ RSpec.describe ConversionHost, :v2v do
         expect(conversion_host_1.eligible?).to eq(false)
       end
 
-      it "fails when no source transport method is enabled" do
+      it "fails when authentication check fails" do
         allow(conversion_host_1).to receive(:source_transport_method).and_return('vddk')
         allow(conversion_host_1).to receive(:authentication_check).and_return([false, 'failed'])
         allow(conversion_host_1).to receive(:check_concurrent_tasks).and_return(true)
         expect(conversion_host_1.eligible?).to eq(false)
       end
 
-      it "fails when no source transport method is enabled" do
+      it "fails when concurrent tasks check fails" do
         allow(conversion_host_1).to receive(:source_transport_method).and_return('vddk')
         allow(conversion_host_1).to receive(:authentication_check).and_return([true, 'worked'])
         allow(conversion_host_1).to receive(:check_concurrent_tasks).and_return(false)
         expect(conversion_host_1.eligible?).to eq(false)
+      end
+
+      it "succeeds when all criteria are met" do
+        allow(conversion_host_1).to receive(:source_transport_method).and_return('vddk')
+        allow(conversion_host_1).to receive(:authentication_check).and_return([true, 'worked'])
+        allow(conversion_host_1).to receive(:check_concurrent_tasks).and_return(true)
+        expect(conversion_host_1.eligible?).to eq(true)
+      end
+    end
+
+    context "#warm_migration_eligible?" do
+      it "fails when source transport method is ssh" do
+        allow(conversion_host_1).to receive(:source_transport_method).and_return('ssh')
+        allow(conversion_host_1).to receive(:authentication_check).and_return([true, 'worked'])
+        allow(conversion_host_1).to receive(:check_concurrent_tasks).and_return(true)
+        expect(conversion_host_1.warm_migration_eligible?).to eq(false)
       end
 
       it "succeeds when all criteria are met" do
@@ -194,6 +210,12 @@ RSpec.describe ConversionHost, :v2v do
 
       it "enable_conversion_host_role raises if vmware_vddk_package_url is nil" do
         expect { conversion_host.enable_conversion_host_role }.to raise_error("vmware_vddk_package_url is mandatory if transformation method is vddk")
+      end
+
+      it "enable_conversion_host_role raises if resource has no hostname nor IP address" do
+        allow(host).to receive(:hostname).and_return(nil)
+        allow(host).to receive(:ipaddresses).and_return([])
+        expect { conversion_host.enable_conversion_host_role('http://file.example.com/vddk-stable.tar.gz', nil) }.to raise_error("Host '#{host.name}' doesn't have a hostname or IP address in inventory")
       end
 
       it "enable_conversion_host_role calls ansible_playbook with extra_vars" do
@@ -500,7 +522,7 @@ RSpec.describe ConversionHost, :v2v do
 
     it "works as expected if the connection is successful but the JSON is invalid" do
       allow(conversion_host).to receive(:connect_ssh).and_return('bogus')
-      expected_message = "Could not parse result data after running virt-v2v-wrapper.py using "\
+      expected_message = "Could not parse result data after running virt-v2v-wrapper using "\
         "options: #{filtered_options}. Result was: bogus."
       expect { conversion_host.run_conversion(conversion_options) }.to raise_error(expected_message)
     end

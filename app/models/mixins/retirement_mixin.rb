@@ -11,7 +11,7 @@ module RetirementMixin
 
   module ClassMethods
     def make_retire_request(*src_ids, requester)
-      klass = (name.demodulize + "RetireRequest").constantize
+      klass = (base_class.name.demodulize + "RetireRequest").constantize
       options = {:src_ids => src_ids.presence, :__request_type__ => klass.request_types.first}
       set_retirement_requester(options[:src_ids], requester)
       klass.make_request(nil, options, requester)
@@ -255,6 +255,10 @@ module RetirementMixin
   def system_context_requester
     if evm_owner.blank?
       $log.info("System context defaulting to admin user because owner of #{name} (#{self.class}) not set or owner no longer found in database.")
+      return User.super_admin
+    end
+    if evm_owner.current_group.nil?
+      $log.info("System context defaulting to admin user because owner of #{name} (#{self.class}) was found but lacks a group.")
       return User.super_admin
     end
     $log.info("Setting retirement requester of #{name} to #{evm_owner_id}.")

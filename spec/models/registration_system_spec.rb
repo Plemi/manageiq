@@ -38,7 +38,7 @@ describe RegistrationSystem do
     end
 
     it "with invalid credentials" do
-      expect_any_instance_of(LinuxAdmin::SubscriptionManager).to receive(:organizations).once.and_raise(LinuxAdmin::CredentialError, "Invalid username or password")
+      expect_any_instance_of(LinuxAdmin::SubscriptionManager).to receive(:organizations).once.and_raise(LinuxAdmin::CredentialError, AwesomeSpawn::CommandResult.new("command_line", "Invalid username or password", "Invalid username or password", 1))
       expect { RegistrationSystem.available_organizations(creds) }.to raise_error(LinuxAdmin::CredentialError)
     end
 
@@ -86,12 +86,12 @@ describe RegistrationSystem do
     end
 
     it "with invalid credentials" do
-      expect(LinuxAdmin::RegistrationSystem).to receive(:validate_credentials).once.and_raise(LinuxAdmin::CredentialError, "Invalid username or password")
+      expect(LinuxAdmin::RegistrationSystem).to receive(:validate_credentials).once.and_raise(LinuxAdmin::CredentialError, AwesomeSpawn::CommandResult.new("command_line", "Invalid username or password", "Invalid username or password", 1))
       expect(RegistrationSystem.verify_credentials(creds)).to be_falsey
     end
 
     it "should rescue NotImplementedError" do
-      allow_any_instance_of(LinuxAdmin::Rhn).to receive_messages(:registered? => true)
+      allow(LinuxAdmin::RegistrationSystem).to receive(:registration_type_uncached).and_return(LinuxAdmin::RegistrationSystem)
       expect(RegistrationSystem.verify_credentials(creds)).to be_falsey
     end
 

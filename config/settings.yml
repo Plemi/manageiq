@@ -74,6 +74,10 @@
       :memory_method_description: High Normal Range of Allocated Memory
   :failover:
     :rule: discovered
+:compliances:
+  :history:
+    :keep_compliances: 6.months
+    :purge_window_size: 10000
 :coresident_miqproxy:
   :concurrent_per_ems: 1
   :concurrent_per_host: 1
@@ -1086,16 +1090,16 @@
     :keep_tasks: 1.week
     :purge_window_size: 1000
 :transformation:
+  :job:
+    :retry_interval: 15 # in seconds
   :limits:
     :max_concurrent_tasks_per_ems: 10
     :max_concurrent_tasks_per_host: 10
     :cpu_limit_per_host: unlimited
     :network_limit_per_host: unlimited
-    :conversion_polling_interval: 15 # in seconds
-    :poll_conversion_max: 86400 # i.e. default 24 hours (15s per-interval)
-    :poll_post_stage_max: 25200 # i.e. default 7 hours (15s per-interval)
 :ui:
   :mark_translated_strings: false
+  :display_ops_database: false
   :url:
 :vim_performance_states:
   :history:
@@ -1211,11 +1215,13 @@
         :queue_timeout: 20.minutes
         :heartbeat_thread_shutdown_timeout: 10.seconds
     :schedule_worker:
+      :audit_managed_resources: 1.days
       :container_entities_purge_interval: 1.day
       :binary_blob_purge_interval: 1.hour
       :authentication_check_interval: 1.hour
       :chargeback_generation_interval: 1.day
       :chargeback_generation_time_utc: 01:00:00
+      :compliance_purge_interval: 1.day
       :db_diagnostics_interval: 30.minutes
       :drift_state_purge_interval: 1.day
       :event_streams_purge_interval: 1.day

@@ -11,6 +11,8 @@ module Rbac
       CloudSubnet
       CloudTenant
       CloudVolume
+      CloudVolumeSnapshot
+      CloudVolumeType
       ConfigurationProfile
       ConfigurationScriptBase
       ConfigurationScriptSource
@@ -46,6 +48,7 @@ module Rbac
       NetworkRouter
       OrchestrationStack
       OrchestrationTemplate
+      PhysicalServer
       ResourcePool
       SecurityGroup
       Service

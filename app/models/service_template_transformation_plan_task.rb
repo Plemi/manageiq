@@ -12,7 +12,7 @@ class ServiceTemplateTransformationPlanTask < ServiceTemplateProvisionTask
   end
 
   def after_request_task_create
-    update_attributes(:description => get_description)
+    update!(:description => get_description)
   end
 
   def resource_action
@@ -31,13 +31,25 @@ class ServiceTemplateTransformationPlanTask < ServiceTemplateProvisionTask
     ServiceTemplate.find_by(:id => vm_resource.options["post_ansible_playbook_service_template_id"])
   end
 
+  def cpu_right_sizing_mode
+    vm_resource.options["cpu_right_sizing_mode"]
+  end
+
+  def memory_right_sizing_mode
+    vm_resource.options["memory_right_sizing_mode"]
+  end
+
+  def warm_migration?
+    vm_resource.options["warm_migration"]
+  end
+
   def update_transformation_progress(progress)
     update_options(:progress => (options[:progress] || {}).merge(progress))
   end
 
   def task_finished
     # update the status of vm transformation status in the plan
-    vm_resource.update_attributes(:status => status == 'Ok' ? ServiceResource::STATUS_COMPLETED : ServiceResource::STATUS_FAILED)
+    vm_resource.update!(:status => status == 'Ok' ? ServiceResource::STATUS_COMPLETED : ServiceResource::STATUS_FAILED)
   end
 
   def mark_vm_migrated
@@ -45,18 +57,45 @@ class ServiceTemplateTransformationPlanTask < ServiceTemplateProvisionTask
   end
 
   def task_active
-    vm_resource.update_attributes(:status => ServiceResource::STATUS_ACTIVE)
+    vm_resource.update!(:status => ServiceResource::STATUS_ACTIVE)
   end
 
   # This method returns true if all mappings are ok. It also preload
   #  virtv2v_disks and network_mappings in task options
   def preflight_check
     raise 'OSP destination and source power_state is off' if destination_ems.emstype == 'openstack' && source.power_state == 'off'
-    update_options(:source_vm_power_state => source.power_state) # This will determine power_state of destination_vm
+    update_options(
+      :source_vm_power_state => source.power_state, # This will determine power_state of destination_vm
+      :source_vm_ipaddresses => source.ipaddresses  # This will determine if we need to wait for ip addresses to appear
+    )
     destination_cluster
+    preflight_check_vm_exists_in_destination
     virtv2v_disks
     network_mappings
-    update_attributes(:state => 'migrate')
+
+    host = source.host
+    raise "No credentials configured for '#{host.name}'" if host.missing_credentials?
+    raise "Invalid authentication for '#{host.name}': #{host.default_authentication.status_details}" unless host.authentication_status_ok?
+
+    { :status => 'Ok', :message => 'Preflight check is successful' }
+  rescue StandardError => error
+    { :status => 'Error', :message => error.message }
+  end
+
+  def preflight_check_vm_exists_in_destination
+    send("preflight_check_vm_exists_in_destination_#{destination_ems.emstype}")
+  end
+
+  def preflight_check_vm_exists_in_destination_rhevm
+    unless destination_ems.vms_and_templates.where(:name => source.name, :ems_cluster => destination_cluster).count.zero?
+      raise "A VM named '#{source.name}' already exist in destination cluster"
+    end
+  end
+
+  def preflight_check_vm_exists_in_destination_openstack
+    unless destination_ems.vms_and_templates.where(:name => source.name, :cloud_tenant => destination_cluster).count.zero?
+      raise "A VM named '#{source.name}' already exist in destination cloud tenant"
+    end
   end
 
   def source_cluster
@@ -159,16 +198,15 @@ class ServiceTemplateTransformationPlanTask < ServiceTemplateProvisionTask
   end
 
   def cancel
-    update_attributes(:cancelation_status => MiqRequestTask::CANCEL_STATUS_REQUESTED)
-    infra_conversion_job.cancel
+    update!(:cancelation_status => MiqRequestTask::CANCEL_STATUS_REQUESTED)
   end
 
   def canceling
-    update_attributes(:cancelation_status => MiqRequestTask::CANCEL_STATUS_PROCESSING)
+    update!(:cancelation_status => MiqRequestTask::CANCEL_STATUS_PROCESSING)
   end
 
   def canceled
-    update_attributes(:cancelation_status => MiqRequestTask::CANCEL_STATUS_FINISHED)
+    update!(:cancelation_status => MiqRequestTask::CANCEL_STATUS_FINISHED)
   end
 
   def conversion_options
@@ -191,7 +229,7 @@ class ServiceTemplateTransformationPlanTask < ServiceTemplateProvisionTask
     with_lock do
       # Automate is updating this options hash (various keys) as well, using with_lock.
       options.merge!(opts)
-      update_attributes(:options => options)
+      update!(:options => options)
     end
     options
   end
@@ -213,6 +251,7 @@ class ServiceTemplateTransformationPlanTask < ServiceTemplateProvisionTask
     updates[:virtv2v_pid] = virtv2v_state['pid'] if virtv2v_state['pid'].present?
     updates[:virtv2v_message] = virtv2v_state['last_message']['message'] if virtv2v_state['last_message'].present?
     if virtv2v_state['finished'].nil?
+      updates[:virtv2v_status] = 'active'
       updated_disks.each do |disk|
         matching_disks = virtv2v_state['disks'].select { |d| d['path'] == disk[:path] }
         raise "No disk matches '#{disk[:path]}'. Aborting." if matching_disks.length.zero?
@@ -223,16 +262,29 @@ class ServiceTemplateTransformationPlanTask < ServiceTemplateProvisionTask
       updates[:virtv2v_finished_on] = Time.now.utc.strftime('%Y-%m-%d %H:%M:%S')
       if virtv2v_state['failed']
         updates[:virtv2v_status] = 'failed'
-        raise "Disks transformation failed."
-      else
+      elsif !canceling?
         updates[:virtv2v_status] = 'succeeded'
+        updates[:destination_vm_uuid] = virtv2v_state['vm_id']
         updated_disks.each { |d| d[:percent] = 100 }
       end
     end
     updates[:virtv2v_disks] = updated_disks
+    update_options(:get_conversion_state_failures => 0)
+  rescue
+    failures = options[:get_conversion_state_failures] || 0
+    update_options(:get_conversion_state_failures => failures + 1)
+    raise "Failed to get conversion state 5 times in a row" if options[:get_conversion_state_failures] > 5
   ensure
     _log.info("InfraConversionJob get_conversion_state to update_options: #{updates}")
     update_options(updates)
+  end
+
+  def cutover
+    if options[:virtv2v_wrapper]['cutover_file'].present?
+      unless conversion_host.create_cutover_file(options[:virtv2v_wrapper]['cutover_file'])
+        raise _("Couldn't create cutover file for #{source.name} on #{conversion_host.name}")
+      end
+    end
   end
 
   def kill_virtv2v(signal = 'TERM')
@@ -250,6 +302,10 @@ class ServiceTemplateTransformationPlanTask < ServiceTemplateProvisionTask
 
     _log.info("Killing virt-v2v (PID: #{options[:virtv2v_pid]}) with #{signal} signal.")
     conversion_host.kill_process(options[:virtv2v_pid], signal)
+  rescue
+    _log.error("Couldn't kill virt_v2v process with PID #{options[:virtv2v_pid]}")
+    update_options(:virtv2v_finished_on => Time.now.utc.strftime('%F %T'))
+    false
   end
 
   private
@@ -308,11 +364,13 @@ class ServiceTemplateTransformationPlanTask < ServiceTemplateProvisionTask
       :vmware_uri         => URI::Generic.build(
         :scheme   => 'esx',
         :userinfo => CGI.escape(source.host.authentication_userid),
-        :host     => source.host.ipaddress,
+        :host     => source.host.miq_custom_get('TransformationIPAddress') || source.host.ipaddress,
         :path     => '/',
         :query    => { :no_verify => 1 }.to_query
       ).to_s,
-      :vmware_password    => source.host.authentication_password
+      :vmware_password    => source.host.authentication_password,
+      :two_phase          => true,
+      :warm               => warm_migration?
     }
   end
 
@@ -321,7 +379,7 @@ class ServiceTemplateTransformationPlanTask < ServiceTemplateProvisionTask
       :vm_name          => URI::Generic.build(
         :scheme   => 'ssh',
         :userinfo => 'root',
-        :host     => source.host.ipaddress,
+        :host     => source.host.miq_custom_get('TransformationIPAddress') || source.host.ipaddress,
         :path     => "/vmfs/volumes/#{Addressable::URI.escape(storage.name)}/#{Addressable::URI.escape(source.location)}"
       ).to_s,
       :transport_method => 'ssh'
