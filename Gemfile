@@ -41,6 +41,7 @@ gem "default_value_for",              "~>3.0.3"
 gem "docker-api",                     "~>1.33.6",      :require => false
 gem "elif",                           "=0.1.0",        :require => false
 gem "fast_gettext",                   "~>1.2.0"
+gem "gettext",                        "<3.3",          :require => false
 gem "gettext_i18n_rails",             "~>1.7.2"
 gem "gettext_i18n_rails_js",          "~>1.3.0"
 gem "hamlit",                         "~>2.8.5"
@@ -194,7 +195,7 @@ group :seed, :manageiq_default do
 end
 
 group :smartstate, :manageiq_default do
-  gem "manageiq-smartstate", "~>0.2.18.1", :require => false
+  gem "manageiq-smartstate", "~>0.2.18.2", :require => false
 end
 
 group :consumption, :manageiq_default do
