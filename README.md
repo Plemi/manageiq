@@ -14,6 +14,17 @@
 
 [![Build history for master branch](https://buildstats.info/travisci/chart/ManageIQ/manageiq?branch=ivanchuk&includeBuildsFromPullRequest=false&buildCount=50)](https://travis-ci.org/ManageIQ/manageiq/branches)
 
+## Forked project
+
+This fork of the official ManageIQ core app aimes at adding support for API and SUI auth token generation for SSO (SAML, OIDC) user authentication.
+
+It simply has a modified Gemfile that points to a forked version of the official ManagegIQ Api plugin : https://github.com/guilrom/manageiq-api (which is based on this PR https://github.com/ManageIQ/manageiq/pull/14959/files by Abellotti)
+
+To work properly, this forked version of ManageIQ app must be used alongside this forked version of the official ManageIQ Service UI app : https://github.com/guilrom/manageiq-ui-service
+
+In order to use this forked project in a docker context, it is also advised to rely on this fork of manageiq-pods project to build proper docker images :
+- https://github.com/guilrom/manageiq-pods
+
 ## Discover, Optimize, and Control your Hybrid IT
 
 ### Manage containers, virtual machines, networks, and storage from a single platform

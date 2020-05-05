@@ -22,6 +22,13 @@ def manageiq_plugin(plugin_name)
   end
 end
 
+# a way to install forked plugins for dev/testing purpose
+def manageiq_forked_plugin(plugin_name, fork_name)
+  unless dependencies.detect { |d| d.name == plugin_name }
+    gem plugin_name, :git => "https://github.com/#{fork_name}/#{plugin_name}", :branch => "ivanchuk"
+  end
+end
+
 manageiq_plugin "manageiq-schema"
 
 # Unmodified gems
@@ -185,7 +192,7 @@ group :replication, :manageiq_default do
 end
 
 group :rest_api, :manageiq_default do
-  manageiq_plugin "manageiq-api"
+  manageiq_forked_plugin("manageiq-api", "Plemi")
 end
 
 group :graphql_api, :manageiq_default do
